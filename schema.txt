@@ -1,0 +1,1159 @@
+// users collection
+{
+  _id: ObjectId,
+  email: {
+    type: String,
+    required: true,
+    unique: true,
+    trim: true,
+    lowercase: true
+  },
+  username: {
+    type: String,
+    required: true,
+    unique: true,
+    trim: true
+  },
+  password: {
+    type: String,
+    required: true
+  },
+  mobileNumber: {
+    type: String,
+    sparse: true
+  },
+  userType: {
+    type: String,
+    enum: ['personal', 'business'],
+    required: true
+  },
+  fullName: String,
+  isVerified: {
+    type: Boolean,
+    default: false
+  },
+  verificationCode: String,
+  resetPasswordToken: String,
+  resetPasswordExpires: Date,
+  twoFactorAuth: {
+    enabled: {
+      type: Boolean,
+      default: false
+    },
+    method: {
+      type: String,
+      enum: ['sms', 'email', 'authenticator'],
+      default: 'sms'
+    },
+    secret: String
+  },
+  authProviders: {
+    google: {
+      id: String,
+      email: String,
+      accessToken: String,
+      refreshToken: String,
+      tokenExpiry: Date
+    },
+    facebook: {
+      id: String,
+      email: String,
+      accessToken: String,
+      refreshToken: String,
+      tokenExpiry: Date
+    },
+    apple: {
+      id: String,
+      email: String,
+      accessToken: String,
+      refreshToken: String,
+      tokenExpiry: Date
+    }
+  },
+  profileComplete: {
+    type: Boolean,
+    default: false
+  },
+  lastLogin: Date,
+  loginHistory: [{
+    timestamp: Date,
+    ipAddress: String,
+    device: String,
+    location: String,
+    success: Boolean
+  }],
+  createdAt: {
+    type: Date,
+    default: Date.now
+  },
+  updatedAt: Date
+}
+
+
+
+// personalProfiles collection
+{
+  _id: ObjectId,
+  userId: {
+    type: ObjectId,
+    ref: 'User',
+    required: true,
+    unique: true
+  },
+  firstName: String,
+  lastName: String,
+  profilePhoto: String, // URL to photo
+  bio: String,
+  dateOfBirth: Date,
+  gender: {
+    type: String,
+    enum: ['male', 'female', 'other', 'prefer_not_to_say']
+  },
+  interests: [String],
+  location: {
+    address: String,
+    city: String,
+    state: String,
+    country: String,
+    postalCode: String,
+    coordinates: {
+      type: {
+        type: String,
+        enum: ['Point'],
+        default: 'Point'
+      },
+      coordinates: [Number] // [longitude, latitude]
+    }
+  },
+  contactInfo: {
+    email: String,
+    phone: String,
+    website: String
+  },
+  socialMedia: [{
+    platform: {
+      type: String,
+      enum: ['instagram', 'facebook', 'twitter', 'linkedin', 'tiktok', 'youtube', 'pinterest', 'snapchat', 'github', 'other']
+    },
+    handle: String,
+    url: String,
+    isVerified: Boolean
+  }],
+  preferences: {
+    language: {
+      type: String,
+      default: 'en'
+    },
+    currency: {
+      type: String,
+      default: 'USD'
+    },
+    distanceUnit: {
+      type: String,
+      enum: ['km', 'mi'],
+      default: 'mi'
+    }
+  },
+  createdAt: {
+    type: Date,
+    default: Date.now
+  },
+  updatedAt: Date
+}
+
+
+// businessProfiles collection
+{
+  _id: ObjectId,
+  userId: {
+    type: ObjectId,
+    ref: 'User',
+    required: true,
+    unique: true
+  },
+  businessName: {
+    type: String,
+    required: true
+  },
+  username: {
+    type: String,
+    required: true,
+    unique: true
+  },
+  logo: String, // URL to logo
+  coverImages: [String], // URLs to cover images
+  businessType: {
+    type: String,
+    enum: ['Small business', 'Medium sized business', 'Franchise', 'Corporation', 'Non profit organizations', 'Startup', 'Online business', 'Others'],
+    required: true
+  },
+  subBusinessType: {
+    type: String,
+    // e.g., 'Fast Food Chain', 'Cafe', 'Fine Dine' for Restaurant industry
+  },
+  professionType: {
+    type: String,
+    enum: ['Freelancer', 'Contractor', 'Consultant', 'Self employed', 'Employer', 'Entrepreneur', 'Remote worker', 'Others']
+  },
+  industry: {
+    type: String,
+    required: true
+  },
+  subIndustry: String,
+  industryTags: [String],
+  description: {
+    short: String,
+    full: String
+  },
+  priceRange: {
+    type: String,
+    enum: ['$', '$$', '$$$', '$$$$']
+  },
+  contactInfo: {
+    email: String,
+    phone: String,
+    website: String
+  },
+  location: {
+    isOnlineOnly: {
+      type: Boolean,
+      default: false
+    },
+    address: String,
+    city: String,
+    state: String,
+    country: String,
+    postalCode: String,
+    coordinates: {
+      type: {
+        type: String,
+        enum: ['Point'],
+        default: 'Point'
+      },
+      coordinates: [Number] // [longitude, latitude]
+    }
+  },
+  businessHours: [{
+    day: {
+      type: String,
+      enum: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+    },
+    open: String, // "09:00"
+    close: String, // "17:00"
+    isClosed: Boolean
+  }],
+  features: [String], // e.g., "Outdoor seating", "Delivery", "Takeout"
+  themeColor: {
+    primary: String, // Hex color code
+    secondary: String, // Hex color code
+    text: String, // Hex color code
+    background: String // Hex color code
+  },
+  callToAction: {
+    primaryAction: {
+      type: String,
+      enum: ['open_url', 'send_email', 'click_to_call', 'share_vcard', 'none'],
+      default: 'none'
+    },
+    buttonColor: String, // Hex color code
+    buttonText: String
+  },
+  completionPercentage: {
+    type: Number,
+    default: 0,
+    min: 0,
+    max: 100
+  },
+  virtualContact: {
+    firstName: String,
+    lastName: String,
+    company: String,
+    workPhone: String,
+    workEmail: String,
+    workAddress: String,
+    city: String,
+    state: String,
+    zipCode: String,
+    country: String,
+    photo: String // URL to photo
+  },
+  metrics: {
+    viewCount: {
+      type: Number,
+      default: 0
+    },
+    favoriteCount: {
+      type: Number,
+      default: 0
+    },
+    ratingAverage: {
+      type: Number,
+      default: 0
+    },
+    ratingCount: {
+      type: Number,
+      default: 0
+    }
+  },
+  createdAt: {
+    type: Date,
+    default: Date.now
+  },
+  updatedAt: Date
+}
+
+
+
+// socialMediaLinks collection
+{
+  _id: ObjectId,
+  userId: {
+    type: ObjectId,
+    ref: 'User',
+    required: true
+  },
+  businessId: {
+    type: ObjectId,
+    ref: 'BusinessProfile'
+  },
+  platform: {
+    type: String,
+    enum: ['instagram', 'tiktok', 'facebook', 'twitter', 'linkedin', 'youtube', 'pinterest', 'snapchat', 'github', 'website', 'whatsapp', 'other'],
+    required: true
+  },
+  handle: String, // Username on the platform
+  displayName: String, // Name to display
+  originalUrl: {
+    type: String,
+    required: true
+  },
+  normalizedUrl: {
+    type: String,
+    required: true
+  },
+  displayUrl: String, // URL for display purposes (may be shortened)
+  metadata: {
+    title: String,
+    description: String,
+    thumbnailUrl: String,
+    followerCount: Number,
+    postCount: Number,
+    isVerified: Boolean
+  },
+  embedSettings: {
+    showHeader: {
+      type: Boolean,
+      default: true
+    },
+    showCaption: {
+      type: Boolean,
+      default: true
+    },
+    maxPosts: {
+      type: Number,
+      default: 6
+    },
+    layout: {
+      type: String,
+      enum: ['grid', 'carousel', 'list'],
+      default: 'grid'
+    }
+  },
+  status: {
+    type: String,
+    enum: ['active', 'broken', 'pending_verification'],
+    default: 'active'
+  },
+  isPublic: {
+    type: Boolean,
+    default: true
+  },
+  displayOrder: {
+    type: Number,
+    default: 0
+  },
+  lastChecked: Date,
+  clicks: {
+    type: Number,
+    default: 0
+  },
+  createdAt: {
+    type: Date,
+    default: Date.now
+  },
+  updatedAt: Date
+}
+
+
+
+// paymentSettings collection
+{
+  _id: ObjectId,
+  userId: {
+    type: ObjectId,
+    ref: 'User',
+    required: true,
+    unique: true
+  },
+  defaultPaymentMethodId: {
+    type: ObjectId,
+    ref: 'PaymentMethod'
+  },
+  billingAddress: {
+    firstName: String,
+    lastName: String,
+    company: String,
+    address1: String,
+    address2: String,
+    city: String,
+    state: String,
+    postalCode: String,
+    country: String,
+    phone: String
+  },
+  taxInformation: {
+    taxId: String,
+    taxType: {
+      type: String,
+      enum: ['vat', 'gst', 'sales_tax', 'none'],
+      default: 'none'
+    },
+    businessName: String,
+    businessAddress: {
+      address1: String,
+      address2: String,
+      city: String,
+      state: String,
+      postalCode: String,
+      country: String
+    }
+  },
+  invoiceSettings: {
+    receiveInvoices: {
+      type: Boolean,
+      default: true
+    },
+    invoiceEmail: String,
+    invoicePrefix: String,
+    invoiceNotes: String
+  },
+  autoRenew: {
+    type: Boolean,
+    default: true
+  },
+  paymentReminders: {
+    enabled: {
+      type: Boolean,
+      default: true
+    },
+    daysBeforeDue: {
+      type: Number,
+      default: 3
+    }
+  },
+  currency: {
+    type: String,
+    default: 'USD'
+  },
+  status: {
+    type: String,
+    enum: ['active', 'suspended', 'delinquent'],
+    default: 'active'
+  },
+  createdAt: {
+    type: Date,
+    default: Date.now
+  },
+  updatedAt: Date
+}
+
+
+
+// paymentMethods collection
+{
+  _id: ObjectId,
+  userId: {
+    type: ObjectId,
+    ref: 'User',
+    required: true
+  },
+  type: {
+    type: String,
+    enum: ['credit_card', 'debit_card', 'paypal', 'bank_account', 'apple_pay', 'google_pay', 'other'],
+    required: true
+  },
+  isDefault: {
+    type: Boolean,
+    default: false
+  },
+  status: {
+    type: String,
+    enum: ['active', 'expired', 'invalid'],
+    default: 'active'
+  },
+  // For credit/debit cards
+  card: {
+    brand: {
+      type: String,
+      enum: ['visa', 'mastercard', 'other']
+    },
+    last4: String,
+    expiryMonth: Number,
+    expiryYear: Number,
+    cardholderName: String,
+    fingerprint: String, // For detecting duplicate cards
+    country: String
+  },
+  // For PayPal
+  paypal: {
+    email: String,
+    payerId: String
+  },
+  // For bank accounts
+  bankAccount: {
+    bankName: String,
+    accountType: {
+      type: String,
+      enum: ['checking', 'savings', 'business']
+    },
+    last4: String,
+    routingNumber: String,
+    country: String
+  },
+  // For digital wallets
+  digitalWallet: {
+    walletType: {
+      type: String,
+      enum: ['apple_pay', 'google_pay', 'samsung_pay']
+    },
+    deviceId: String,
+    tokenId: String
+  },
+  // Payment processor specific data
+  processorData: {
+    processorName: {
+      type: String,
+      enum: ['stripe', 'paypal', 'braintree', 'adyen', 'other']
+    },
+    tokenId: String,
+    customerId: String,
+    paymentMethodId: String
+  },
+  billingAddress: {
+    firstName: String,
+    lastName: String,
+    address1: String,
+    address2: String,
+    city: String,
+    state: String,
+    postalCode: String,
+    country: String
+  },
+  createdAt: {
+    type: Date,
+    default: Date.now
+  },
+  updatedAt: Date
+}
+
+
+
+// transactions collection
+{
+  _id: ObjectId,
+  userId: {
+    type: ObjectId,
+    ref: 'User',
+    required: true
+  },
+  subscriptionId: {
+    type: ObjectId,
+    ref: 'Subscription'
+  },
+  paymentMethodId: {
+    type: ObjectId,
+    ref: 'PaymentMethod'
+  },
+  transactionType: {
+    type: String,
+    enum: ['subscription_payment', 'one_time_purchase', 'refund', 'credit', 'chargeback'],
+    required: true
+  },
+  status: {
+    type: String,
+    enum: ['pending', 'completed', 'failed', 'refunded', 'disputed'],
+    required: true
+  },
+  amount: {
+    type: Number,
+    required: true
+  },
+  currency: {
+    type: String,
+    default: 'USD',
+    required: true
+  },
+  description: String,
+  metadata: {
+    invoiceId: String,
+    receiptId: String,
+    subscriptionPeriod: {
+      start: Date,
+      end: Date
+    },
+    planName: String,
+    promoCode: String,
+    discount: Number
+  },
+  paymentProcessor: {
+    name: {
+      type: String,
+      enum: ['stripe', 'paypal', 'braintree', 'adyen', 'other']
+    },
+    transactionId: String,
+    fee: Number,
+    processorResponse: {
+      code: String,
+      message: String,
+      errorType: String
+    }
+  },
+  billingAddress: {
+    firstName: String,
+    lastName: String,
+    address1: String,
+    address2: String,
+    city: String,
+    state: String,
+    postalCode: String,
+    country: String
+  },
+  taxDetails: {
+    taxAmount: Number,
+    taxRate: Number,
+    taxId: String,
+    taxRegion: String
+  },
+  refundDetails: {
+    refundedAt: Date,
+    refundAmount: Number,
+    refundReason: String,
+    refundedBy: {
+      type: ObjectId,
+      ref: 'User'
+    },
+    refundTransactionId: String
+  },
+  createdAt: {
+    type: Date,
+    default: Date.now
+  },
+  updatedAt: Date
+}
+
+
+
+// subscriptionPlans collection
+{
+  _id: ObjectId,
+  name: {
+    type: String,
+    required: true
+  },
+  description: String,
+  type: {
+    type: String,
+    enum: ['free', 'basic', 'premium', 'enterprise', 'custom'],
+    required: true
+  },
+  price: {
+    amount: {
+      type: Number,
+      required: true
+    },
+    currency: {
+      type: String,
+      default: 'USD'
+    },
+    interval: {
+      type: String,
+      enum: ['day', 'week', 'month', 'year'],
+      default: 'month'
+    },
+    intervalCount: {
+      type: Number,
+      default: 1
+    }
+  },
+  features: [{
+    name: String,
+    description: String,
+    included: Boolean,
+    limit: Number,
+    highlighted: Boolean
+  }],
+  limits: {
+    products: Number,
+    storage: Number, // in MB
+    bandwidth: Number, // in MB
+    customDomain: Boolean,
+    apiCalls: Number,
+    teamMembers: Number
+  },
+  trialPeriodDays: {
+    type: Number,
+    default: 0
+  },
+  sortOrder: {
+    type: Number,
+    default: 0
+  },
+  isPublic: {
+    type: Boolean,
+    default: true
+  },
+  isActive: {
+    type: Boolean,
+    default: true
+  },
+  metadata: {
+    popularPlan: Boolean,
+    recommendedFor: String,
+    comparisonHighlights: [String]
+  },
+  createdAt: {
+    type: Date,
+    default: Date.now
+  },
+  updatedAt: Date
+}
+
+
+
+// integrations collection
+{
+  _id: ObjectId,
+  userId: {
+    type: ObjectId,
+    ref: 'User',
+    required: true
+  },
+  businessId: {
+    type: ObjectId,
+    ref: 'BusinessProfile'
+  },
+  type: {
+    type: String,
+    enum: ['google', 'social_media', 'reservation', 'music_podcast', 'custom_frame', 'app_integration'],
+    required: true
+  },
+  subType: {
+    type: String,
+    enum: ['google_reviews', 'google_booking_calendar', 'google_maps', 'instagram_feed', 'tiktok_profile', 'facebook_profile', 'reservation_system', 'music_player', 'podcast_player', 'custom_html', 'api_integration']
+  },
+  name: {
+    type: String,
+    required: true
+  },
+  description: String,
+  status: {
+    type: String,
+    enum: ['active', 'inactive', 'pending', 'error'],
+    default: 'pending'
+  },
+  displayOrder: {
+    type: Number,
+    default: 0
+  },
+  settings: {
+    title: String,
+    url: String,
+    apiKey: String,
+    handle: String,
+    widgetId: String,
+    embedCode: String,
+    showHeader: Boolean,
+    showFooter: Boolean,
+    maxItems: Number,
+    refreshInterval: Number,
+    customCss: String,
+    customJs: String
+  },
+  // Google specific settings
+  googleSettings: {
+    placeId: String,
+    businessName: String,
+    apiKey: String,
+    mapLocation: {
+      latitude: Number,
+      longitude: Number,
+      zoom: Number
+    },
+    reviewSettings: {
+      showRating: Boolean,
+      minRating: Number,
+      maxReviews: Number,
+      sortBy: {
+        type: String,
+        enum: ['recent', 'rating_high', 'rating_low']
+      }
+    }
+  },
+  // Social media specific settings
+  socialMediaSettings: {
+    platform: {
+      type: String,
+      enum: ['instagram', 'tiktok', 'facebook', 'twitter', 'linkedin', 'youtube']
+    },
+    handle: String,
+    displayName: String,
+    accessToken: String,
+    refreshToken: String,
+    tokenExpiry: Date,
+    feedSettings: {
+      layout: {
+        type: String,
+        enum: ['grid', 'carousel', 'list']
+      },
+      postCount: Number,
+      showCaption: Boolean,
+      showLikes: Boolean,
+      showComments: Boolean
+    }
+  },
+  // Reservation specific settings
+  reservationSettings: {
+    provider: {
+      type: String,
+      enum: ['opentable', 'resy', 'yelp', 'custom']
+    },
+    reservationUrl: String,
+    businessId: String,
+    apiKey: String,
+    buttonText: String,
+    buttonColor: String
+  },
+  // Music/Podcast specific settings
+  mediaSettings: {
+    provider: {
+      type: String,
+      enum: ['spotify', 'apple_music', 'soundcloud', 'apple_podcasts', 'google_podcasts', 'custom']
+    },
+    contentUrl: String,
+    contentId: String,
+    showPlayer: Boolean,
+    autoplay: Boolean,
+    showPlaylist: Boolean
+  },
+  // Custom frame settings
+  customFrameSettings: {
+    html: String,
+    height: Number,
+    width: Number,
+    allowScroll: Boolean,
+    allowFullscreen: Boolean
+  },
+  // App integration settings
+  appIntegrationSettings: {
+    appName: String,
+    appId: String,
+    apiEndpoint: String,
+    webhookUrl: String,
+    secretKey: String
+  },
+  authData: {
+    accessToken: String,
+    refreshToken: String,
+    tokenExpiry: Date,
+    scope: String
+  },
+  metrics: {
+    views: {
+      type: Number,
+      default: 0
+    },
+    clicks: {
+      type: Number,
+      default: 0
+    },
+    conversions: {
+      type: Number,
+      default: 0
+    },
+    lastSynced: Date
+  },
+  createdAt: {
+    type: Date,
+    default: Date.now
+  },
+  updatedAt: Date
+}
+
+
+// userDomains collection
+{
+  _id: ObjectId,
+  userId: {
+    type: ObjectId,
+    ref: 'User',
+    required: true
+  },
+  businessId: {
+    type: ObjectId,
+    ref: 'BusinessProfile'
+  },
+  domainName: {
+    type: String,
+    required: true,
+    unique: true
+  },
+  subdomainName: {
+    type: String,
+    unique: true
+  },
+  status: {
+    type: String,
+    enum: ['pending', 'active', 'verification_required', 'failed', 'expired'],
+    default: 'pending'
+  },
+  dnsRecords: [{
+    type: {
+      type: String,
+      enum: ['A', 'CNAME', 'TXT', 'MX', 'NS']
+    },
+    name: String,
+    value: String,
+    ttl: Number,
+    isVerified: Boolean,
+    verifiedAt: Date
+  }],
+  ssl: {
+    enabled: {
+      type: Boolean,
+      default: true
+    },
+    status: {
+      type: String,
+      enum: ['pending', 'active', 'failed', 'expired'],
+      default: 'pending'
+    },
+    issueDate: Date,
+    expiryDate: Date,
+    provider: String
+  },
+  settings: {
+    forceHttps: {
+      type: Boolean,
+      default: true
+    },
+    redirectWww: {
+      type: Boolean,
+      default: true
+    },
+  },
+  registrationDetails: {
+    registrar: String,
+    registeredAt: Date,
+    expiresAt: Date,
+    autoRenew: {
+      type: Boolean,
+      default: true
+    },
+    privacyProtection: {
+      type: Boolean,
+      default: true
+    }
+  },
+  createdAt: {
+    type: Date,
+    default: Date.now
+  },
+  updatedAt: Date
+}
+
+
+
+// supportTickets collection
+{
+  _id: ObjectId,
+  userId: {
+    type: ObjectId,
+    ref: 'User',
+    required: true
+  },
+  ticketNumber: {
+    type: String,
+    unique: true
+  },
+  subject: {
+    type: String,
+    required: true
+  },
+  category: {
+    type: String,
+    enum: ['account', 'billing', 'technical', 'feature_request', 'bug_report', 'other'],
+    required: true
+  },
+  priority: {
+    type: String,
+    enum: ['low', 'medium', 'high', 'critical'],
+    default: 'medium'
+  },
+  status: {
+    type: String,
+    enum: ['open', 'in_progress', 'waiting_for_customer', 'resolved', 'closed'],
+    default: 'open'
+  },
+  description: {
+    type: String,
+    required: true
+  },
+  attachments: [{
+    fileName: String,
+    fileType: String,
+    fileSize: Number,
+    fileUrl: String,
+    uploadedAt: Date
+  }],
+  messages: [{
+    sender: {
+      type: String,
+      enum: ['customer', 'support', 'system'],
+      required: true
+    },
+    senderId: {
+      type: ObjectId,
+      ref: 'User'
+    },
+    message: {
+      type: String,
+      required: true
+    },
+    attachments: [{
+      fileName: String,
+      fileType: String,
+      fileSize: Number,
+      fileUrl: String
+    }],
+    createdAt: {
+      type: Date,
+      default: Date.now
+    },
+    isRead: {
+      type: Boolean,
+      default: false
+    }
+  }],
+  metadata: {
+    browser: String,
+    operatingSystem: String,
+    device: String,
+    appVersion: String,
+    ipAddress: String,
+    relatedTickets: [{
+      type: ObjectId,
+      ref: 'SupportTicket'
+    }]
+  },
+  assignedTo: {
+    type: ObjectId,
+    ref: 'User'
+  },
+  resolvedAt: Date,
+  closedAt: Date,
+  createdAt: {
+    type: Date,
+    default: Date.now
+  },
+  updatedAt: Date
+}
+
+
+
+
+// Create indexes for better query performance
+
+// Users
+db.users.createIndex({ email: 1 }, { unique: true })
+db.users.createIndex({ username: 1 }, { unique: true })
+db.users.createIndex({ userType: 1 })
+db.users.createIndex({ "authProviders.google.id": 1 }, { sparse: true })
+db.users.createIndex({ "authProviders.facebook.id": 1 }, { sparse: true })
+db.users.createIndex({ "authProviders.apple.id": 1 }, { sparse: true })
+db.users.createIndex({ status: 1 })
+
+// Personal Profiles
+db.personalProfiles.createIndex({ userId: 1 }, { unique: true })
+db.personalProfiles.createIndex({ "location.coordinates": "2dsphere" })
+db.personalProfiles.createIndex({ "socialMedia.platform": 1, "socialMedia.handle": 1 })
+
+// Business Profiles
+db.businessProfiles.createIndex({ userId: 1 }, { unique: true })
+db.businessProfiles.createIndex({ username: 1 }, { unique: true })
+db.businessProfiles.createIndex({ businessName: "text", description: "text" })
+db.businessProfiles.createIndex({ businessType: 1 })
+db.businessProfiles.createIndex({ industry: 1 })
+db.businessProfiles.createIndex({ "location.coordinates": "2dsphere" })
+db.businessProfiles.createIndex({ priceRange: 1 })
+db.businessProfiles.createIndex({ "metrics.ratingAverage": 1 })
+
+// Social Media Links
+db.socialMediaLinks.createIndex({ userId: 1 })
+db.socialMediaLinks.createIndex({ businessId: 1 })
+db.socialMediaLinks.createIndex({ platform: 1 })
+db.socialMediaLinks.createIndex({ normalizedUrl: 1 })
+db.socialMediaLinks.createIndex({ handle: 1 })
+db.socialMediaLinks.createIndex({ userId: 1, platform: 1 })
+
+// Payment Settings
+db.paymentSettings.createIndex({ userId: 1 }, { unique: true })
+db.paymentSettings.createIndex({ status: 1 })
+
+// Payment Methods
+db.paymentMethods.createIndex({ userId: 1 })
+db.paymentMethods.createIndex({ userId: 1, isDefault: 1 })
+db.paymentMethods.createIndex({ "card.fingerprint": 1 })
+db.paymentMethods.createIndex({ "processorData.paymentMethodId": 1 })
+
+// Transactions
+db.transactions.createIndex({ userId: 1 })
+db.transactions.createIndex({ subscriptionId: 1 })
+db.transactions.createIndex({ "paymentProcessor.transactionId": 1 })
+db.transactions.createIndex({ createdAt: 1 })
+db.transactions.createIndex({ status: 1 })
+db.transactions.createIndex({ transactionType: 1 })
+
+// Subscriptions
+db.subscriptions.createIndex({ userId: 1 })
+db.subscriptions.createIndex({ planId: 1 })
+db.subscriptions.createIndex({ status: 1 })
+db.subscriptions.createIndex({ "currentPeriod.end": 1 })
+db.subscriptions.createIndex({ nextBillingDate: 1 })
+db.subscriptions.createIndex({ "paymentProcessor.subscriptionId": 1 })
+
+// Subscription Plans
+db.subscriptionPlans.createIndex({ type: 1 })
+db.subscriptionPlans.createIndex({ "price.amount": 1 })
+db.subscriptionPlans.createIndex({ isActive: 1 })
+db.subscriptionPlans.createIndex({ sortOrder: 1 })
+
+// Integrations
+db.integrations.createIndex({ userId: 1 })
+db.integrations.createIndex({ businessId: 1 })
+db.integrations.createIndex({ type: 1, subType: 1 })
+db.integrations.createIndex({ status: 1 })
+
+// User Domains
+db.userDomains.createIndex({ userId: 1 })
+db.userDomains.createIndex({ domainName: 1 }, { unique: true })
+db.userDomains.createIndex({ subdomainName: 1 }, { unique: true, sparse: true })
+db.userDomains.createIndex({ status: 1 })
+
+// Support Tickets
+db.supportTickets.createIndex({ userId: 1 })
+db.supportTickets.createIndex({ ticketNumber: 1 }, { unique: true })
+db.supportTickets.createIndex({ status: 1 })
+db.supportTickets.createIndex({ category: 1 })
+db.supportTickets.createIndex({ assignedTo: 1 })
+db.supportTickets.createIndex({ createdAt: 1 })
+
