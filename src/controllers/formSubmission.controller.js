@@ -39,7 +39,6 @@ exports.submitForm = async (req, res, next) => {
         message: 'Page not found or not published'
       });
     }
-
     // Verify widget exists and is a form type
     const widget = await Widget.findOne({ 
       _id: widgetId, 
@@ -48,7 +47,8 @@ exports.submitForm = async (req, res, next) => {
       status: 'active',
       isVisible: true
     });
-
+    console.log("widgetId",widgetId);
+console.log("widget reached",widget);
     if (!widget) {
       return res.status(404).json({
         success: false,

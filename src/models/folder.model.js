@@ -45,11 +45,7 @@ const folderSchema = new mongoose.Schema(
       default: 0,
       min: 0
     },
-    // Business pages tracking
-    businessPages: [{
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'BuilderPage'
-    }],
+    // Business pages tracking - REMOVED: Now using favorites system
     // Thumbnails for the folder (from business pages)
     thumbnails: [{
       type: String, // URL to thumbnail image

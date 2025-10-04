@@ -184,7 +184,8 @@ favoriteSchema.statics.getUserFavoritesByType = async function(userId, options =
   // Populate content data based on type
   for (let favorite of favorites) {
     if (favorite.type === 'Page') {
-      const page = await mongoose.model('BuilderPage').findById(favorite.widgetId).lean();
+      // Try BuilderPage first
+      let page = await mongoose.model('BuilderPage').findById(favorite.widgetId).lean();
       if (page) {
         favorite.pageData = {
           _id: page._id,
@@ -194,16 +195,40 @@ favoriteSchema.statics.getUserFavoritesByType = async function(userId, options =
           pageType: page.pageType,
           logo: page.logo,
           cover: page.cover,
-          isPublished: page.settings.isPublished
+          isPublished: page.settings.isPublished,
+          priceRange: page.priceRange,
+          location: page.location
         };
+      } else {
+        // If not found in BuilderPage, try BusinessProfile
+        const businessProfile = await mongoose.model('BusinessProfile').findById(favorite.widgetId).lean();
+        if (businessProfile) {
+          favorite.pageData = {
+            _id: businessProfile._id,
+            title: businessProfile.businessName,
+            slug: businessProfile.username,
+            description: businessProfile.description?.short || businessProfile.description?.full,
+            pageType: "business",
+            logo: businessProfile.logo,
+            cover: businessProfile.coverImages?.[0] || null,
+            isPublished: true,
+            priceRange: businessProfile.priceRange,
+            location: businessProfile.location
+          };
+        }
       }
     } else {
       const widget = await mongoose.model('Widget').findById(favorite.widgetId).lean();
+      
       if (widget) {
         if (favorite.type === 'Product' && favorite.productId) {
           // Find the specific product within the products array
           const products = widget.settings?.specific?.products || [];
-          const specificProduct = products.find(p => p._id?.toString() === favorite.productId);
+          
+          const specificProduct = products.find(p => 
+            p._id?.toString() === favorite.productId || 
+            p._id?.toString() === favorite.productId?.toString()
+          );
           
           if (specificProduct) {
             favorite.productData = {
@@ -216,6 +241,16 @@ favoriteSchema.statics.getUserFavoritesByType = async function(userId, options =
               widgetId: widget._id,
               widgetName: widget.name,
               widgetType: widget.type
+            };
+          } else {
+            // Product not found - create widgetData as fallback
+            favorite.widgetData = {
+              _id: widget._id,
+              name: widget.name,
+              type: widget.type,
+              settings: widget.settings,
+              layout: widget.layout,
+              status: widget.status
             };
           }
         } else {
@@ -283,7 +318,8 @@ favoriteSchema.statics.getFavoritesGroupedByType = async function(userId, option
     let contentData = null;
     
     if (favorite.type === 'Page') {
-      const page = await mongoose.model('BuilderPage').findById(favorite.widgetId).lean();
+      // Try BuilderPage first
+      let page = await mongoose.model('BuilderPage').findById(favorite.widgetId).lean();
       if (page) {
         contentData = {
           _id: page._id,
@@ -293,8 +329,27 @@ favoriteSchema.statics.getFavoritesGroupedByType = async function(userId, option
           pageType: page.pageType,
           logo: page.logo,
           cover: page.cover,
-          isPublished: page.settings.isPublished
+          isPublished: page.settings.isPublished,
+          priceRange: page.priceRange,
+          location: page.location
         };
+      } else {
+        // If not found in BuilderPage, try BusinessProfile
+        const businessProfile = await mongoose.model('BusinessProfile').findById(favorite.widgetId).lean();
+        if (businessProfile) {
+          contentData = {
+            _id: businessProfile._id,
+            title: businessProfile.businessName,
+            slug: businessProfile.username,
+            description: businessProfile.description?.short || businessProfile.description?.full,
+            pageType: "business",
+            logo: businessProfile.logo,
+            cover: businessProfile.coverImages?.[0] || null,
+            isPublished: true,
+            priceRange: businessProfile.priceRange,
+            location: businessProfile.location
+          };
+        }
       }
     } else {
       const widget = await mongoose.model('Widget').findById(favorite.widgetId).lean();

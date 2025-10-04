@@ -769,23 +769,35 @@ exports.reorderProducts = async (req, res, next) => {
       });
     }
 
-    // Update product orders
-    const updatePromises = products.map(({ productId, order }) => {
-      return Widget.updateOne(
-        { 
-          _id: id, 
-          userId,
-          'settings.specific.products._id': productId 
-        },
-        { 
-          $set: { 
-            'settings.specific.products.$.order': order 
-          } 
-        }
-      );
+    // Update product orders by rebuilding the products array
+    const updatedProducts = widget.settings.specific.products.map(product => {
+      const reorderItem = products.find(p => p.productId === product._id.toString());
+      if (reorderItem) {
+        return { ...product, order: reorderItem.order };
+      }
+      return product;
     });
 
-    await Promise.all(updatePromises);
+    // Sort by order to ensure proper sequence
+    updatedProducts.sort((a, b) => a.order - b.order);
+
+    console.log('Reordering products:', {
+      widgetId: id,
+      originalOrder: widget.settings.specific.products.map(p => ({ id: p._id, order: p.order })),
+      newOrder: updatedProducts.map(p => ({ id: p._id, order: p.order }))
+    });
+
+    // Update the widget with the new products array
+    const updateResult = await Widget.updateOne(
+      { _id: id, userId },
+      { 
+        $set: { 
+          'settings.specific.products': updatedProducts
+        } 
+      }
+    );
+
+    console.log('Update result:', updateResult);
 
     // Get updated widget
     const updatedWidget = await Widget.findById(id);
@@ -820,6 +832,15 @@ exports.deleteProduct = async (req, res, next) => {
     // Find the widget and verify product exists
     const widget = await Widget.findOne({ _id: id, userId });
     if (!widget) {
+      // Check if widget exists but belongs to different user
+      const anyWidget = await Widget.findById(id);
+      if (anyWidget) {
+        return res.status(403).json({
+          success: false,
+          message: 'You do not have permission to access this widget'
+        });
+      }
+      
       return res.status(404).json({
         success: false,
         message: 'Widget not found'
@@ -838,6 +859,12 @@ exports.deleteProduct = async (req, res, next) => {
       p => p._id.toString() === productId
     );
 
+    console.log('Products in widget:', widget.settings.specific.products.map(p => ({
+      id: p._id.toString(),
+      name: p.productName
+    })));
+    console.log('Looking for productId:', productId);
+
     if (!productExists) {
       return res.status(404).json({
         success: false,
@@ -846,14 +873,16 @@ exports.deleteProduct = async (req, res, next) => {
     }
 
     // Remove the product from the array
-    await Widget.updateOne(
+    const updateResult = await Widget.updateOne(
       { _id: id, userId },
       { 
         $pull: { 
-          'settings.specific.products': { _id: productId } 
+          'settings.specific.products': { _id: new mongoose.Types.ObjectId(productId) } 
         } 
       }
     );
+
+    // console.log('Delete update result:', updateResult);
 
     // Get updated widget
     const updatedWidget = await Widget.findById(id);

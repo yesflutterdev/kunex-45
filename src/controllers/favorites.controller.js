@@ -150,7 +150,9 @@ exports.addFavorite = async (req, res, next) => {
           pageType: "business",
           logo: content.logo,
           cover: content.coverImages?.[0] || null,
-          isPublished: true
+          isPublished: true,
+          priceRange: content.priceRange,
+          location: content.location
         };
       } else {
         // Handle BuilderPage as Page
@@ -162,7 +164,9 @@ exports.addFavorite = async (req, res, next) => {
           pageType: content.pageType,
           logo: content.logo,
           cover: content.cover,
-          isPublished: content.settings?.isPublished || false
+          isPublished: content.settings?.isPublished || false,
+          priceRange: content.priceRange,
+          location: content.location
         };
       }
     } else if (type === 'Product' && specificProduct) {
@@ -363,7 +367,8 @@ exports.getFavorite = async (req, res, next) => {
     if (favorite) {
       // Add content data based on type
       if (favorite.type === 'Page') {
-        const page = await BuilderPage.findById(favorite.widgetId).lean();
+        // Try BuilderPage first
+        let page = await BuilderPage.findById(favorite.widgetId).lean();
         if (page) {
           favorite.pageData = {
             _id: page._id,
@@ -373,8 +378,27 @@ exports.getFavorite = async (req, res, next) => {
             pageType: page.pageType,
             logo: page.logo,
             cover: page.cover,
-            isPublished: page.settings.isPublished
+            isPublished: page.settings.isPublished,
+            priceRange: page.priceRange,
+            location: page.location
           };
+        } else {
+          // If not found in BuilderPage, try BusinessProfile
+          const businessProfile = await BusinessProfile.findById(favorite.widgetId).lean();
+          if (businessProfile) {
+            favorite.pageData = {
+              _id: businessProfile._id,
+              title: businessProfile.businessName,
+              slug: businessProfile.username,
+              description: businessProfile.description?.short || businessProfile.description?.full,
+              pageType: "business",
+              logo: businessProfile.logo,
+              cover: businessProfile.coverImages?.[0] || null,
+              isPublished: true,
+              priceRange: businessProfile.priceRange,
+              location: businessProfile.location
+            };
+          }
         }
       } else {
         const widget = await Widget.findById(favorite.widgetId).lean();
@@ -473,7 +497,8 @@ exports.updateFavorite = async (req, res, next) => {
     // Add content data based on type
     if (updatedFavorite) {
       if (updatedFavorite.type === 'Page') {
-        const page = await BuilderPage.findById(updatedFavorite.widgetId).lean();
+        // Try BuilderPage first
+        let page = await BuilderPage.findById(updatedFavorite.widgetId).lean();
         if (page) {
           updatedFavorite.pageData = {
             _id: page._id,
@@ -483,8 +508,27 @@ exports.updateFavorite = async (req, res, next) => {
             pageType: page.pageType,
             logo: page.logo,
             cover: page.cover,
-            isPublished: page.settings.isPublished
+            isPublished: page.settings.isPublished,
+            priceRange: page.priceRange,
+            location: page.location
           };
+        } else {
+          // If not found in BuilderPage, try BusinessProfile
+          const businessProfile = await BusinessProfile.findById(updatedFavorite.widgetId).lean();
+          if (businessProfile) {
+            updatedFavorite.pageData = {
+              _id: businessProfile._id,
+              title: businessProfile.businessName,
+              slug: businessProfile.username,
+              description: businessProfile.description?.short || businessProfile.description?.full,
+              pageType: "business",
+              logo: businessProfile.logo,
+              cover: businessProfile.coverImages?.[0] || null,
+              isPublished: true,
+              priceRange: businessProfile.priceRange,
+              location: businessProfile.location
+            };
+          }
         }
       } else {
         const widget = await Widget.findById(updatedFavorite.widgetId).lean();

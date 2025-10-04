@@ -4,6 +4,17 @@ const foldersController = require('../controllers/folders.controller');
 const auth = require('../middleware/auth.mw');
 
 /**
+ * Folders API Routes
+ * 
+ * Updated functionality:
+ * - Folders now populate businessPages and thumbnails from favorites
+ * - businessPages array contains full data from favorited content (business profiles, products, widgets)
+ * - thumbnails array contains up to 4 preview images from the business pages
+ * - GET /api/folders returns folders with populated data
+ * - GET /api/folders/{folderId}/business-pages returns detailed business page data
+ */
+
+/**
  * @swagger
  * components:
  *   schemas:
@@ -51,6 +62,61 @@ const auth = require('../middleware/auth.mw');
  *           type: number
  *           description: Number of favorites in this folder
  *           example: 12
+ *         businessPages:
+ *           type: array
+ *           description: Business pages in this folder (populated from favorites)
+ *           items:
+ *             type: object
+ *             properties:
+ *               _id:
+ *                 type: string
+ *                 description: Business page ID
+ *               title:
+ *                 type: string
+ *                 description: Business page title
+ *               slug:
+ *                 type: string
+ *                 description: Business page slug
+ *               description:
+ *                 type: string
+ *                 description: Business page description
+ *               pageType:
+ *                 type: string
+ *                 enum: ['business', 'product', 'widget']
+ *                 description: Type of page
+ *               logo:
+ *                 type: string
+ *                 description: Business logo URL
+ *               cover:
+ *                 type: string
+ *                 description: Cover image URL
+ *               isPublished:
+ *                 type: boolean
+ *                 description: Whether the page is published
+ *               price:
+ *                 type: string
+ *                 description: Product price (for product pages)
+ *               currency:
+ *                 type: string
+ *                 description: Product currency (for product pages)
+ *               productUrl:
+ *                 type: string
+ *                 description: Product URL (for product pages)
+ *               widgetType:
+ *                 type: string
+ *                 description: Widget type (for widget pages)
+ *         thumbnails:
+ *           type: array
+ *           description: Thumbnail images for the folder (max 4)
+ *           items:
+ *             type: string
+ *             description: Thumbnail image URL
+ *           maxItems: 4
+ *           example: ["https://example.com/thumb1.jpg", "https://example.com/thumb2.jpg"]
+ *         lastUpdatedPage:
+ *           type: string
+ *           description: ID of the most recently updated business page
+ *           example: "60d5ecb74b24a1234567890f"
  *         metadata:
  *           type: object
  *           properties:
@@ -177,7 +243,7 @@ router.post('/', auth.authenticate, foldersController.createFolder);
  * /api/folders:
  *   get:
  *     summary: Get user's folders (KON-34)
- *     description: Retrieve user's folders with optional filtering and sorting
+ *     description: Retrieve user's folders with business pages and thumbnails populated from favorites. Each folder includes thumbnails (max 4) and business pages with full data from favorited content.
  *     tags: [Folders]
  *     security:
  *       - bearerAuth: []
@@ -243,6 +309,11 @@ router.post('/', auth.authenticate, foldersController.createFolder);
  *                           type: string
  *                         sortBy:
  *                           type: string
+ *                     
+ *                     # Note: Each folder in the folders array now includes:
+ *                     # - businessPages: Array of business page objects with full data
+ *                     # - thumbnails: Array of thumbnail image URLs (max 4)
+ *                     # - lastUpdatedPage: ID of most recently updated page
  *       400:
  *         description: Validation error
  *       401:
@@ -747,6 +818,7 @@ router.post('/:folderId/duplicate', auth.authenticate, foldersController.duplica
  * /api/folders/{folderId}/business-pages:
  *   get:
  *     summary: Get business pages from a folder
+ *     description: Retrieve business pages from a specific folder with full data. Returns paginated results with business profiles, products, and widgets that have been favorited in this folder.
  *     tags: [Folders]
  *     security:
  *       - bearerAuth: []
@@ -785,6 +857,102 @@ router.post('/:folderId/duplicate', auth.authenticate, foldersController.duplica
  *     responses:
  *       200:
  *         description: Business pages retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     folder:
+ *                       type: object
+ *                       properties:
+ *                         _id:
+ *                           type: string
+ *                         name:
+ *                           type: string
+ *                         description:
+ *                           type: string
+ *                         color:
+ *                           type: string
+ *                         icon:
+ *                           type: string
+ *                         itemCount:
+ *                           type: number
+ *                         thumbnails:
+ *                           type: array
+ *                           items:
+ *                             type: string
+ *                     businessPages:
+ *                       type: array
+ *                       description: Array of business pages with full data
+ *                       items:
+ *                         type: object
+ *                         properties:
+ *                           _id:
+ *                             type: string
+ *                             description: Business page ID
+ *                           title:
+ *                             type: string
+ *                             description: Business page title
+ *                           slug:
+ *                             type: string
+ *                             description: Business page slug
+ *                           description:
+ *                             type: string
+ *                             description: Business page description
+ *                           pageType:
+ *                             type: string
+ *                             enum: ['business', 'product', 'widget']
+ *                             description: Type of page
+ *                           logo:
+ *                             type: string
+ *                             description: Business logo URL
+ *                           cover:
+ *                             type: string
+ *                             description: Cover image URL
+ *                           isPublished:
+ *                             type: boolean
+ *                             description: Whether the page is published
+ *                           createdAt:
+ *                             type: string
+ *                             format: date-time
+ *                           updatedAt:
+ *                             type: string
+ *                             format: date-time
+ *                           price:
+ *                             type: string
+ *                             description: Product price (for product pages)
+ *                           currency:
+ *                             type: string
+ *                             description: Product currency (for product pages)
+ *                           productUrl:
+ *                             type: string
+ *                             description: Product URL (for product pages)
+ *                           widgetType:
+ *                             type: string
+ *                             description: Widget type (for widget pages)
+ *                     pagination:
+ *                       type: object
+ *                       properties:
+ *                         current:
+ *                           type: number
+ *                           description: Current page number
+ *                         total:
+ *                           type: number
+ *                           description: Total number of pages
+ *                         count:
+ *                           type: number
+ *                           description: Number of items on current page
+ *                         totalItems:
+ *                           type: number
+ *                           description: Total number of business pages
+ *       401:
+ *         description: Unauthorized
  *       404:
  *         description: Folder not found
  */
@@ -915,5 +1083,131 @@ router.put('/move-page/:pageId', auth.authenticate, foldersController.moveBusine
  *         description: Folder not found
  */
 router.put('/:folderId/thumbnails', auth.authenticate, foldersController.updateFolderThumbnails);
+
+/**
+ * @swagger
+ * /api/folders/{folderId}/pages:
+ *   get:
+ *     summary: Get business pages from folder (simplified)
+ *     description: Retrieve only the business pages from a folder without folder details. Returns just the list of business pages.
+ *     tags: [Folders]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: folderId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Folder ID
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *           default: 1
+ *         description: Page number
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           default: 20
+ *         description: Number of items per page
+ *       - in: query
+ *         name: sortBy
+ *         schema:
+ *           type: string
+ *           default: updatedAt
+ *         description: Sort field
+ *       - in: query
+ *         name: sortOrder
+ *         schema:
+ *           type: string
+ *           enum: [asc, desc]
+ *           default: desc
+ *         description: Sort order
+ *     responses:
+ *       200:
+ *         description: Business pages retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     businessPages:
+ *                       type: array
+ *                       description: Array of business pages with full data
+ *                       items:
+ *                         type: object
+ *                         properties:
+ *                           _id:
+ *                             type: string
+ *                             description: Business page ID
+ *                           title:
+ *                             type: string
+ *                             description: Business page title
+ *                           slug:
+ *                             type: string
+ *                             description: Business page slug
+ *                           description:
+ *                             type: string
+ *                             description: Business page description
+ *                           pageType:
+ *                             type: string
+ *                             enum: ['business', 'product', 'widget']
+ *                             description: Type of page
+ *                           logo:
+ *                             type: string
+ *                             description: Business logo URL
+ *                           cover:
+ *                             type: string
+ *                             description: Cover image URL
+ *                           isPublished:
+ *                             type: boolean
+ *                             description: Whether the page is published
+ *                           createdAt:
+ *                             type: string
+ *                             format: date-time
+ *                           updatedAt:
+ *                             type: string
+ *                             format: date-time
+ *                           price:
+ *                             type: string
+ *                             description: Product price (for product pages)
+ *                           currency:
+ *                             type: string
+ *                             description: Product currency (for product pages)
+ *                           productUrl:
+ *                             type: string
+ *                             description: Product URL (for product pages)
+ *                           widgetType:
+ *                             type: string
+ *                             description: Widget type (for widget pages)
+ *                     pagination:
+ *                       type: object
+ *                       properties:
+ *                         current:
+ *                           type: number
+ *                           description: Current page number
+ *                         total:
+ *                           type: number
+ *                           description: Total number of pages
+ *                         count:
+ *                           type: number
+ *                           description: Number of items on current page
+ *                         totalItems:
+ *                           type: number
+ *                           description: Total number of business pages
+ *       401:
+ *         description: Unauthorized
+ *       404:
+ *         description: Folder not found
+ */
+router.get('/:folderId/pages', auth.authenticate, foldersController.getFolderPages);
 
 module.exports = router; 
