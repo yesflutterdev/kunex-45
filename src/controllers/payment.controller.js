@@ -4,6 +4,8 @@ const PaymentMethod = require('../models/paymentMethod.model');
 const Transaction = require('../models/transaction.model');
 const SubscriptionPlan = require('../models/subscriptionPlan.model');
 const Subscription = require('../models/subscription.model');
+const PaymentHistory = require('../models/paymentHistory.model');
+const User = require('../models/user.model');
 const {
   paymentSettingsValidation,
   paymentMethodValidation,
@@ -620,9 +622,415 @@ const paymentIntentController = {
   }
 };
 
+// NEW PAYMENT FUNCTIONS
+const makePayment = async (req, res) => {
+  try {
+    const { subscriptionPlan, amountPaid, subscriptionPlanId } = req.body;
+    const userId = req.user.id;
+
+    // Get subscription plan details
+    const plan = await SubscriptionPlan.findById(subscriptionPlanId);
+    if (!plan) {
+      return res.status(404).json({
+        success: false,
+        message: 'Subscription plan not found'
+      });
+    }
+
+    // Validate amount (check if plan has price object)
+    const planPrice = plan.price?.amount || 0;
+    if (amountPaid !== planPrice) {
+      return res.status(400).json({
+        success: false,
+        message: `Amount paid (${amountPaid}) does not match plan amount (${planPrice})`
+      });
+    }
+
+    // Calculate subscription dates
+    const subscriptionDate = new Date();
+    const subscriptionExpireDate = new Date();
+    
+    // Handle trial period
+    if (plan.trialPeriodDays > 0) {
+      subscriptionExpireDate.setDate(subscriptionExpireDate.getDate() + plan.trialPeriodDays);
+    } else {
+      // For paid plans, calculate based on plan type or duration
+      subscriptionExpireDate.setMonth(subscriptionExpireDate.getMonth() + 1); // Default 1 month
+    }
+
+    // Create payment history record
+    const paymentHistory = new PaymentHistory({
+      userId,
+      subscriptionPlanId: plan._id,
+      subscriptionPlanName: plan.name,
+      subscriptionPlanType: plan.type,
+      amountPaid,
+      subscriptionStartDate: subscriptionDate,
+      subscriptionEndDate: subscriptionExpireDate,
+      trialPeriodDays: plan.trialPeriodDays,
+      isTrialPeriod: plan.trialPeriodDays > 0,
+      paymentStatus: 'completed', // For now, assume payment is successful
+      metadata: {
+        originalAmount: planPrice,
+        planFeatures: plan.features?.map(f => f.name) || [],
+        planLimits: plan.limits
+      }
+    });
+
+    await paymentHistory.save();
+
+    // Update user subscription
+    await User.findByIdAndUpdate(userId, {
+      subscriptionPlan: plan.type,
+      subscriptionDate,
+      subscriptionExpireDate,
+      isActiveSubscription: true,
+      planSubscribedTo: plan.type // Also update the existing field
+    });
+
+    // Structure the response for better frontend consumption
+    const structuredResponse = {
+      payment: {
+        id: paymentHistory._id,
+        transaction: {
+          amount: paymentHistory.amountPaid,
+          currency: paymentHistory.currency,
+          status: paymentHistory.paymentStatus,
+          method: paymentHistory.paymentMethod,
+          date: paymentHistory.createdAt,
+          formattedAmount: paymentHistory.amountPaid === 0 ? 'Free' : `$${paymentHistory.amountPaid}`
+        },
+        subscription: {
+          planId: plan._id,
+          planName: plan.name,
+          planType: plan.type,
+          description: plan.description,
+          duration: {
+            startDate: subscriptionDate,
+            endDate: subscriptionExpireDate,
+            daysRemaining: Math.max(0, Math.ceil((subscriptionExpireDate - new Date()) / (1000 * 60 * 60 * 24))),
+            isActive: subscriptionExpireDate > new Date()
+          },
+          trial: {
+            hasTrial: plan.trialPeriodDays > 0,
+            trialDays: plan.trialPeriodDays,
+            isTrialActive: plan.trialPeriodDays > 0 && subscriptionExpireDate > new Date()
+          }
+        },
+        features: plan.features.map(feature => ({
+          name: feature.name.replace('Dummy text ', ''), // Clean up feature names
+          description: feature.description,
+          included: feature.included,
+          limit: feature.limit,
+          highlighted: feature.highlighted
+        })),
+        limits: {
+          products: plan.limits.products,
+          storage: `${plan.limits.storage} MB`,
+          bandwidth: `${plan.limits.bandwidth} MB`,
+          customDomain: plan.limits.customDomain,
+          apiCalls: plan.limits.apiCalls,
+          teamMembers: plan.limits.teamMembers
+        },
+        pricing: {
+          originalAmount: planPrice,
+          amountPaid: paymentHistory.amountPaid,
+          discount: paymentHistory.metadata.discountApplied,
+          tax: paymentHistory.metadata.taxAmount,
+          currency: paymentHistory.currency,
+          formatted: {
+            original: planPrice === 0 ? 'Free' : `$${planPrice}`,
+            paid: paymentHistory.amountPaid === 0 ? 'Free' : `$${paymentHistory.amountPaid}`,
+            discount: paymentHistory.metadata.discountApplied > 0 ? `$${paymentHistory.metadata.discountApplied} off` : 'No discount'
+          }
+        },
+        metadata: {
+          createdAt: paymentHistory.createdAt,
+          stripeData: {
+            productId: plan.stripeData?.productId,
+            priceId: plan.stripeData?.priceId
+          }
+        }
+      },
+      user: {
+        subscriptionPlan: plan.type,
+        subscriptionDate,
+        subscriptionExpireDate,
+        isActiveSubscription: true,
+        planSubscribedTo: plan.type
+      },
+      summary: {
+        totalSpent: paymentHistory.amountPaid,
+        subscriptionStatus: 'active',
+        trialStatus: plan.trialPeriodDays > 0 ? 'active' : 'none',
+        nextBillingDate: subscriptionExpireDate,
+        planCategory: planPrice === 0 ? 'free' : (planPrice >= 100 ? 'enterprise' : 'paid')
+      }
+    };
+
+    res.status(200).json({
+      success: true,
+      message: 'Payment processed successfully',
+      data: structuredResponse
+    });
+
+  } catch (error) {
+    console.error('Payment error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Payment processing failed',
+      error: error.message
+    });
+  }
+};
+
+// Get user payment history
+const getPaymentHistory = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { page = 1, limit = 10 } = req.query;
+
+    const paymentHistory = await PaymentHistory.getUserPaymentHistory(userId, page, limit);
+    const totalCount = await PaymentHistory.countDocuments({ userId });
+
+    // Structure payment history for better frontend consumption
+    const structuredHistory = paymentHistory.map(payment => {
+      const plan = payment.subscriptionPlanId;
+      
+      return {
+        id: payment._id,
+        transaction: {
+          amount: payment.amountPaid,
+          currency: payment.currency,
+          status: payment.paymentStatus,
+          method: payment.paymentMethod,
+          date: payment.createdAt,
+          formattedAmount: payment.amountPaid === 0 ? 'Free' : `$${payment.amountPaid}`
+        },
+        subscription: {
+          planId: plan._id,
+          planName: plan.name,
+          planType: plan.type,
+          description: plan.description,
+          duration: {
+            startDate: payment.subscriptionStartDate,
+            endDate: payment.subscriptionEndDate,
+            daysRemaining: Math.max(0, Math.ceil((new Date(payment.subscriptionEndDate) - new Date()) / (1000 * 60 * 60 * 24))),
+            isActive: new Date(payment.subscriptionEndDate) > new Date()
+          },
+          trial: {
+            hasTrial: payment.isTrialPeriod,
+            trialDays: payment.trialPeriodDays,
+            isTrialActive: payment.isTrialPeriod && new Date(payment.subscriptionEndDate) > new Date()
+          }
+        },
+        features: plan.features.map(feature => ({
+          name: feature.name.replace('Dummy text ', ''), // Clean up feature names
+          description: feature.description,
+          included: feature.included,
+          limit: feature.limit,
+          highlighted: feature.highlighted
+        })),
+        limits: {
+          products: plan.limits.products,
+          storage: `${plan.limits.storage} MB`,
+          bandwidth: `${plan.limits.bandwidth} MB`,
+          customDomain: plan.limits.customDomain,
+          apiCalls: plan.limits.apiCalls,
+          teamMembers: plan.limits.teamMembers
+        },
+        pricing: {
+          originalAmount: payment.metadata.originalAmount,
+          amountPaid: payment.amountPaid,
+          discount: payment.metadata.discountApplied,
+          tax: payment.metadata.taxAmount,
+          currency: payment.currency,
+          formatted: {
+            original: payment.metadata.originalAmount === 0 ? 'Free' : `$${payment.metadata.originalAmount}`,
+            paid: payment.amountPaid === 0 ? 'Free' : `$${payment.amountPaid}`,
+            discount: payment.metadata.discountApplied > 0 ? `$${payment.metadata.discountApplied} off` : 'No discount'
+          }
+        },
+        metadata: {
+          createdAt: payment.createdAt,
+          updatedAt: payment.updatedAt,
+          stripeData: {
+            paymentIntentId: payment.stripePaymentIntentId,
+            sessionId: payment.stripeSessionId
+          }
+        }
+      };
+    });
+
+    // Calculate summary statistics
+    const summary = {
+      totalPayments: totalCount,
+      totalSpent: paymentHistory.reduce((sum, payment) => sum + payment.amountPaid, 0),
+      activeSubscriptions: paymentHistory.filter(payment => 
+        payment.paymentStatus === 'completed' && 
+        new Date(payment.subscriptionEndDate) > new Date()
+      ).length,
+      trialSubscriptions: paymentHistory.filter(payment => 
+        payment.isTrialPeriod && 
+        new Date(payment.subscriptionEndDate) > new Date()
+      ).length,
+      planTypes: [...new Set(paymentHistory.map(payment => payment.subscriptionPlanType))],
+      paymentMethods: [...new Set(paymentHistory.map(payment => payment.paymentMethod))]
+    };
+
+    res.status(200).json({
+      success: true,
+      data: {
+        payments: structuredHistory,
+        summary,
+        pagination: {
+          currentPage: parseInt(page),
+          totalPages: Math.ceil(totalCount / limit),
+          totalCount,
+          hasNext: page * limit < totalCount,
+          hasPrev: page > 1,
+          limit: parseInt(limit)
+        }
+      }
+    });
+
+  } catch (error) {
+    console.error('Get payment history error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch payment history',
+      error: error.message
+    });
+  }
+};
+
+// Get user current subscription
+const getCurrentSubscription = async (req, res) => {
+  try {
+    const userId = req.user.id;
+
+    const user = await User.findById(userId).select('subscriptionPlan subscriptionDate subscriptionExpireDate isActiveSubscription planSubscribedTo');
+    const activeSubscription = await PaymentHistory.getUserActiveSubscription(userId);
+
+    res.status(200).json({
+      success: true,
+      data: {
+        user,
+        activeSubscription
+      }
+    });
+
+  } catch (error) {
+    console.error('Get current subscription error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch current subscription',
+      error: error.message
+    });
+  }
+};
+
+// Get all subscription plans
+const getSubscriptionPlans = async (req, res) => {
+  try {
+    const plans = await SubscriptionPlan.getPublicPlans();
+
+    // Structure plans by category
+    const structuredPlans = {
+      free: [],
+      paid: [],
+      enterprise: []
+    };
+
+    // Process each plan
+    plans.forEach(plan => {
+      const planData = {
+        id: plan._id,
+        name: plan.name,
+        description: plan.description,
+        type: plan.type,
+        price: {
+          amount: plan.price.amount,
+          currency: plan.price.currency,
+          interval: plan.price.interval,
+          formatted: plan.price.amount === 0 ? 'Free' : `$${plan.price.amount}/${plan.price.interval}`
+        },
+        features: plan.features.map(feature => ({
+          name: feature.name.replace('Dummy text ', ''), // Clean up feature names
+          description: feature.description,
+          included: feature.included,
+          limit: feature.limit,
+          highlighted: feature.highlighted
+        })),
+        limits: {
+          products: plan.limits.products,
+          storage: `${plan.limits.storage} MB`,
+          bandwidth: `${plan.limits.bandwidth} MB`,
+          customDomain: plan.limits.customDomain,
+          apiCalls: plan.limits.apiCalls,
+          teamMembers: plan.limits.teamMembers
+        },
+        trialPeriod: {
+          days: plan.trialPeriodDays,
+          hasTrial: plan.trialPeriodDays > 0
+        },
+        metadata: {
+          popular: plan.metadata.popularPlan,
+          recommendedFor: plan.metadata.recommendedFor,
+          highlights: plan.metadata.comparisonHighlights
+        },
+        stripeData: {
+          productId: plan.stripeData.productId,
+          priceId: plan.stripeData.priceId
+        },
+        sortOrder: plan.sortOrder
+      };
+
+      // Categorize plans
+      if (plan.price.amount === 0) {
+        structuredPlans.free.push(planData);
+      } else if (plan.type.toLowerCase().includes('enterprise') || plan.price.amount >= 100) {
+        structuredPlans.enterprise.push(planData);
+      } else {
+        structuredPlans.paid.push(planData);
+      }
+    });
+
+    // Sort each category by sortOrder
+    Object.keys(structuredPlans).forEach(category => {
+      structuredPlans[category].sort((a, b) => a.sortOrder - b.sortOrder);
+    });
+
+    res.status(200).json({
+      success: true,
+      data: {
+        categories: structuredPlans,
+        summary: {
+          totalPlans: plans.length,
+          freePlans: structuredPlans.free.length,
+          paidPlans: structuredPlans.paid.length,
+          enterprisePlans: structuredPlans.enterprise.length
+        }
+      }
+    });
+
+  } catch (error) {
+    console.error('Get subscription plans error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch subscription plans',
+      error: error.message
+    });
+  }
+};
+
 module.exports = {
   paymentSettingsController,
   paymentMethodController,
   transactionController,
-  paymentIntentController
+  paymentIntentController,
+  makePayment,
+  getPaymentHistory,
+  getCurrentSubscription,
+  getSubscriptionPlans
 }; 

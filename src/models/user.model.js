@@ -103,6 +103,24 @@ const userSchema = new mongoose.Schema(
       default: 'free',
     },
 
+    // NEW SUBSCRIPTION FIELDS
+    subscriptionPlan: {
+      type: String,
+      default: 'free'
+    },
+    subscriptionDate: {
+      type: Date,
+      default: null
+    },
+    subscriptionExpireDate: {
+      type: Date,
+      default: null
+    },
+    isActiveSubscription: {
+      type: Boolean,
+      default: false
+    }
+
   },
   {
     timestamps: true,

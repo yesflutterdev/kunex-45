@@ -5,7 +5,11 @@ const {
   paymentSettingsController,
   paymentMethodController,
   transactionController,
-  paymentIntentController
+  paymentIntentController,
+  makePayment,
+  getPaymentHistory,
+  getCurrentSubscription,
+  getSubscriptionPlans
 } = require('../controllers/payment.controller');
 
 /**
@@ -895,5 +899,510 @@ router.post('/intents', authenticate, paymentIntentController.createPaymentInten
  *         description: Server error
  */
 router.post('/intents/:id/confirm', authenticate, paymentIntentController.confirmPaymentIntent);
+
+// NEW PAYMENT ROUTES
+/**
+ * @swagger
+ * /api/payments/make-payment:
+ *   post:
+ *     summary: Process payment for subscription
+ *     tags: [Payment]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - subscriptionPlan
+ *               - amountPaid
+ *               - subscriptionPlanId
+ *             properties:
+ *               subscriptionPlan:
+ *                 type: string
+ *               amountPaid:
+ *                 type: number
+ *                 minimum: 0
+ *               subscriptionPlanId:
+ *                 type: string
+ *                 format: objectId
+ *     responses:
+ *       200:
+ *         description: Payment processed successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 message:
+ *                   type: string
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     payment:
+ *                       type: object
+ *                       properties:
+ *                         id:
+ *                           type: string
+ *                         transaction:
+ *                           type: object
+ *                           properties:
+ *                             amount:
+ *                               type: number
+ *                             currency:
+ *                               type: string
+ *                             status:
+ *                               type: string
+ *                             method:
+ *                               type: string
+ *                             date:
+ *                               type: string
+ *                               format: date-time
+ *                             formattedAmount:
+ *                               type: string
+ *                         subscription:
+ *                           type: object
+ *                           properties:
+ *                             planId:
+ *                               type: string
+ *                             planName:
+ *                               type: string
+ *                             planType:
+ *                               type: string
+ *                             description:
+ *                               type: string
+ *                             duration:
+ *                               type: object
+ *                               properties:
+ *                                 startDate:
+ *                                   type: string
+ *                                   format: date-time
+ *                                 endDate:
+ *                                   type: string
+ *                                   format: date-time
+ *                                 daysRemaining:
+ *                                   type: number
+ *                                 isActive:
+ *                                   type: boolean
+ *                             trial:
+ *                               type: object
+ *                               properties:
+ *                                 hasTrial:
+ *                                   type: boolean
+ *                                 trialDays:
+ *                                   type: number
+ *                                 isTrialActive:
+ *                                   type: boolean
+ *                         features:
+ *                           type: array
+ *                           items:
+ *                             type: object
+ *                             properties:
+ *                               name:
+ *                                 type: string
+ *                               description:
+ *                                 type: string
+ *                               included:
+ *                                 type: boolean
+ *                               limit:
+ *                                 type: number
+ *                               highlighted:
+ *                                 type: boolean
+ *                         limits:
+ *                           type: object
+ *                           properties:
+ *                             products:
+ *                               type: number
+ *                             storage:
+ *                               type: string
+ *                             bandwidth:
+ *                               type: string
+ *                             customDomain:
+ *                               type: boolean
+ *                             apiCalls:
+ *                               type: number
+ *                             teamMembers:
+ *                               type: number
+ *                         pricing:
+ *                           type: object
+ *                           properties:
+ *                             originalAmount:
+ *                               type: number
+ *                             amountPaid:
+ *                               type: number
+ *                             discount:
+ *                               type: number
+ *                             tax:
+ *                               type: number
+ *                             currency:
+ *                               type: string
+ *                             formatted:
+ *                               type: object
+ *                               properties:
+ *                                 original:
+ *                                   type: string
+ *                                 paid:
+ *                                   type: string
+ *                                 discount:
+ *                                   type: string
+ *                         metadata:
+ *                           type: object
+ *                           properties:
+ *                             createdAt:
+ *                               type: string
+ *                               format: date-time
+ *                             stripeData:
+ *                               type: object
+ *                               properties:
+ *                                 productId:
+ *                                   type: string
+ *                                 priceId:
+ *                                   type: string
+ *                     user:
+ *                       type: object
+ *                       properties:
+ *                         subscriptionPlan:
+ *                           type: string
+ *                         subscriptionDate:
+ *                           type: string
+ *                           format: date-time
+ *                         subscriptionExpireDate:
+ *                           type: string
+ *                           format: date-time
+ *                         isActiveSubscription:
+ *                           type: boolean
+ *                         planSubscribedTo:
+ *                           type: string
+ *                     summary:
+ *                       type: object
+ *                       properties:
+ *                         totalSpent:
+ *                           type: number
+ *                         subscriptionStatus:
+ *                           type: string
+ *                         trialStatus:
+ *                           type: string
+ *                         nextBillingDate:
+ *                           type: string
+ *                           format: date-time
+ *                         planCategory:
+ *                           type: string
+ *       400:
+ *         description: Validation error
+ *       404:
+ *         description: Subscription plan not found
+ */
+router.post('/make-payment', authenticate, makePayment);
+
+/**
+ * @swagger
+ * /api/payments/history:
+ *   get:
+ *     summary: Get user payment history with structured data
+ *     tags: [Payment]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *           default: 1
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           default: 10
+ *     responses:
+ *       200:
+ *         description: Payment history retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     payments:
+ *                       type: array
+ *                       items:
+ *                         type: object
+ *                         properties:
+ *                           id:
+ *                             type: string
+ *                           transaction:
+ *                             type: object
+ *                             properties:
+ *                               amount:
+ *                                 type: number
+ *                               currency:
+ *                                 type: string
+ *                               status:
+ *                                 type: string
+ *                               method:
+ *                                 type: string
+ *                               date:
+ *                                 type: string
+ *                                 format: date-time
+ *                               formattedAmount:
+ *                                 type: string
+ *                           subscription:
+ *                             type: object
+ *                             properties:
+ *                               planId:
+ *                                 type: string
+ *                               planName:
+ *                                 type: string
+ *                               planType:
+ *                                 type: string
+ *                               description:
+ *                                 type: string
+ *                               duration:
+ *                                 type: object
+ *                                 properties:
+ *                                   startDate:
+ *                                     type: string
+ *                                     format: date-time
+ *                                   endDate:
+ *                                     type: string
+ *                                     format: date-time
+ *                                   daysRemaining:
+ *                                     type: number
+ *                                   isActive:
+ *                                     type: boolean
+ *                               trial:
+ *                                 type: object
+ *                                 properties:
+ *                                   hasTrial:
+ *                                     type: boolean
+ *                                   trialDays:
+ *                                     type: number
+ *                                   isTrialActive:
+ *                                     type: boolean
+ *                           features:
+ *                             type: array
+ *                             items:
+ *                               type: object
+ *                               properties:
+ *                                 name:
+ *                                   type: string
+ *                                 description:
+ *                                   type: string
+ *                                 included:
+ *                                   type: boolean
+ *                                 limit:
+ *                                   type: number
+ *                                 highlighted:
+ *                                   type: boolean
+ *                           limits:
+ *                             type: object
+ *                             properties:
+ *                               products:
+ *                                 type: number
+ *                               storage:
+ *                                 type: string
+ *                               bandwidth:
+ *                                 type: string
+ *                               customDomain:
+ *                                 type: boolean
+ *                               apiCalls:
+ *                                 type: number
+ *                               teamMembers:
+ *                                 type: number
+ *                           pricing:
+ *                             type: object
+ *                             properties:
+ *                               originalAmount:
+ *                                 type: number
+ *                               amountPaid:
+ *                                 type: number
+ *                               discount:
+ *                                 type: number
+ *                               tax:
+ *                                 type: number
+ *                               currency:
+ *                                 type: string
+ *                               formatted:
+ *                                 type: object
+ *                                 properties:
+ *                                   original:
+ *                                     type: string
+ *                                   paid:
+ *                                     type: string
+ *                                   discount:
+ *                                     type: string
+ *                     summary:
+ *                       type: object
+ *                       properties:
+ *                         totalPayments:
+ *                           type: number
+ *                         totalSpent:
+ *                           type: number
+ *                         activeSubscriptions:
+ *                           type: number
+ *                         trialSubscriptions:
+ *                           type: number
+ *                         planTypes:
+ *                           type: array
+ *                           items:
+ *                             type: string
+ *                         paymentMethods:
+ *                           type: array
+ *                           items:
+ *                             type: string
+ *                     pagination:
+ *                       type: object
+ *                       properties:
+ *                         currentPage:
+ *                           type: number
+ *                         totalPages:
+ *                           type: number
+ *                         totalCount:
+ *                           type: number
+ *                         hasNext:
+ *                           type: boolean
+ *                         hasPrev:
+ *                           type: boolean
+ *                         limit:
+ *                           type: number
+ */
+router.get('/history', authenticate, getPaymentHistory);
+
+/**
+ * @swagger
+ * /api/payments/current-subscription:
+ *   get:
+ *     summary: Get user current subscription
+ *     tags: [Payment]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Current subscription retrieved successfully
+ */
+router.get('/current-subscription', authenticate, getCurrentSubscription);
+
+/**
+ * @swagger
+ * /api/payments/subscription-plans:
+ *   get:
+ *     summary: Get all available subscription plans organized by category
+ *     tags: [Payment]
+ *     responses:
+ *       200:
+ *         description: Subscription plans retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     categories:
+ *                       type: object
+ *                       properties:
+ *                         free:
+ *                           type: array
+ *                           items:
+ *                             type: object
+ *                             properties:
+ *                               id:
+ *                                 type: string
+ *                               name:
+ *                                 type: string
+ *                               description:
+ *                                 type: string
+ *                               type:
+ *                                 type: string
+ *                               price:
+ *                                 type: object
+ *                                 properties:
+ *                                   amount:
+ *                                     type: number
+ *                                   currency:
+ *                                     type: string
+ *                                   interval:
+ *                                     type: string
+ *                                   formatted:
+ *                                     type: string
+ *                               features:
+ *                                 type: array
+ *                                 items:
+ *                                   type: object
+ *                                   properties:
+ *                                     name:
+ *                                       type: string
+ *                                     description:
+ *                                       type: string
+ *                                     included:
+ *                                       type: boolean
+ *                                     limit:
+ *                                       type: number
+ *                                     highlighted:
+ *                                       type: boolean
+ *                               limits:
+ *                                 type: object
+ *                                 properties:
+ *                                   products:
+ *                                     type: number
+ *                                   storage:
+ *                                     type: string
+ *                                   bandwidth:
+ *                                     type: string
+ *                                   customDomain:
+ *                                     type: boolean
+ *                                   apiCalls:
+ *                                     type: number
+ *                                   teamMembers:
+ *                                     type: number
+ *                               trialPeriod:
+ *                                 type: object
+ *                                 properties:
+ *                                   days:
+ *                                     type: number
+ *                                   hasTrial:
+ *                                     type: boolean
+ *                               metadata:
+ *                                 type: object
+ *                                 properties:
+ *                                   popular:
+ *                                     type: boolean
+ *                                   recommendedFor:
+ *                                     type: string
+ *                                   highlights:
+ *                                     type: array
+ *                                     items:
+ *                                       type: string
+ *                         paid:
+ *                           type: array
+ *                           items:
+ *                             $ref: '#/components/schemas/SubscriptionPlan'
+ *                         enterprise:
+ *                           type: array
+ *                           items:
+ *                             $ref: '#/components/schemas/SubscriptionPlan'
+ *                     summary:
+ *                       type: object
+ *                       properties:
+ *                         totalPlans:
+ *                           type: number
+ *                         freePlans:
+ *                           type: number
+ *                         paidPlans:
+ *                           type: number
+ *                         enterprisePlans:
+ *                           type: number
+ */
+router.get('/subscription-plans', getSubscriptionPlans);
 
 module.exports = router; 
