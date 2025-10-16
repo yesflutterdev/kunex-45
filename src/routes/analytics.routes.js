@@ -8,7 +8,16 @@ const {
   getTimeFilteredAnalytics,
   getAnalyticsDashboard,
   getRealTimeAnalytics,
-  exportAnalytics
+  exportAnalytics,
+  trackClick,
+  updateUserLocation,
+  getUserCollectiveAnalytics,
+  getTopPerformingLinks,
+  getContentPerformance,
+  // New simplified endpoints
+  getUserPeakHours,
+  getUserLocation,
+  getUserLinks
 } = require('../controllers/analytics.controller');
 const auth = require('../middleware/auth.mw');
 
@@ -258,7 +267,7 @@ const auth = require('../middleware/auth.mw');
  *       400:
  *         description: Validation error
  */
-router.post('/track', trackView);
+router.post('/track-view', trackView);
 
 /**
  * @swagger
@@ -929,5 +938,596 @@ router.get('/real-time', auth.authenticate, getRealTimeAnalytics);
  *         description: Validation error
  */
 router.get('/export', auth.authenticate, exportAnalytics);
+
+/**
+ * @swagger
+ * /api/analytics/track-click:
+ *   post:
+ *     summary: Track click on any content
+ *     tags: [Analytics]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - targetId
+ *             properties:
+ *               targetId:
+ *                 type: string
+ *                 description: ID of the target content (type will be auto-detected)
+ *     responses:
+ *       200:
+ *         description: Click tracked successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 message:
+ *                   type: string
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     clickId:
+ *                       type: string
+ *                     isUnique:
+ *                       type: boolean
+ *                     targetId:
+ *                       type: string
+ *                     targetType:
+ *                       type: string
+ *                       description: Auto-detected content type
+ *                     targetTitle:
+ *                       type: string
+ *                       description: Auto-extracted content title
+ *                     targetUrl:
+ *                       type: string
+ *                       description: Auto-generated content URL
+ *       400:
+ *         description: Already clicked
+ */
+router.post('/track-click', auth.authenticate, trackClick);
+
+/**
+ * @swagger
+ * /api/analytics/update-location:
+ *   put:
+ *     summary: Update user location with coordinates, city, and address
+ *     tags: [Analytics]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - longitude
+ *               - latitude
+ *             properties:
+ *               longitude:
+ *                 type: number
+ *                 minimum: -180
+ *                 maximum: 180
+ *                 description: Longitude coordinate
+ *               latitude:
+ *                 type: number
+ *                 minimum: -90
+ *                 maximum: 90
+ *                 description: Latitude coordinate
+ *               city:
+ *                 type: string
+ *                 description: User's city (optional, converted from coordinates)
+ *               address:
+ *                 type: string
+ *                 description: User's full address (optional, converted from coordinates)
+ *     responses:
+ *       200:
+ *         description: Location updated successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 message:
+ *                   type: string
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     longitude:
+ *                       type: number
+ *                     latitude:
+ *                       type: number
+ *                     city:
+ *                       type: string
+ *                     address:
+ *                       type: string
+ *                     lastLocationUpdate:
+ *                       type: string
+ *                       format: date-time
+ *       400:
+ *         description: Validation error
+ */
+router.put('/update-location', auth.authenticate, updateUserLocation);
+
+/**
+ * @swagger
+ * /api/analytics/business/{businessId}/collective:
+ *   get:
+ *     summary: Get business collective analytics
+ *     tags: [Analytics]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: businessId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Business ID
+ *       - in: query
+ *         name: period
+ *         schema:
+ *           type: string
+ *           enum: [7d, 30d, 90d, 1y]
+ *           default: 30d
+ *         description: Time period
+ *       - in: query
+ *         name: startDate
+ *         schema:
+ *           type: string
+ *           format: date
+ *         description: Start date (ISO format)
+ *       - in: query
+ *         name: endDate
+ *         schema:
+ *           type: string
+ *           format: date
+ *         description: End date (ISO format)
+ *     responses:
+ *       200:
+ *         description: Business collective analytics
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     businessId:
+ *                       type: string
+ *                     businessName:
+ *                       type: string
+ *                     period:
+ *                       type: string
+ *                     collectiveMetrics:
+ *                       type: object
+ *                       properties:
+ *                         totalViews:
+ *                           type: number
+ *                         totalClicks:
+ *                           type: number
+ *                         totalFavorites:
+ *                           type: number
+ *                         overallCTR:
+ *                           type: number
+ *                         uniqueClicks:
+ *                           type: number
+ *                         uniqueFavorites:
+ *                           type: number
+ *                     contentBreakdown:
+ *                       type: array
+ *                     cityAnalytics:
+ *                       type: object
+ *                     timeAnalytics:
+ *                       type: object
+ */
+router.get('/user/:userId/collective', auth.authenticate, getUserCollectiveAnalytics);
+
+/**
+ * @swagger
+ * /api/analytics/individual/{userId}/collective:
+ *   get:
+ *     summary: Get individual collective analytics
+ *     tags: [Analytics]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: userId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: User ID
+ *       - in: query
+ *         name: period
+ *         schema:
+ *           type: string
+ *           enum: [7d, 30d, 90d, 1y]
+ *           default: 30d
+ *         description: Time period
+ *       - in: query
+ *         name: startDate
+ *         schema:
+ *           type: string
+ *           format: date
+ *         description: Start date (ISO format)
+ *       - in: query
+ *         name: endDate
+ *         schema:
+ *           type: string
+ *           format: date
+ *         description: End date (ISO format)
+ *     responses:
+ *       200:
+ *         description: Individual collective analytics
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     userId:
+ *                       type: string
+ *                     userName:
+ *                       type: string
+ *                     period:
+ *                       type: string
+ *                     collectiveMetrics:
+ *                       type: object
+ *                     contentBreakdown:
+ *                       type: array
+ *                     cityAnalytics:
+ *                       type: object
+ *                     timeAnalytics:
+ *                       type: object
+ */
+
+/**
+ * @swagger
+ * /api/analytics/top-performing-links:
+ *   get:
+ *     summary: Get top performing links (based on Figma design)
+ *     tags: [Analytics]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: ownerId
+ *         schema:
+ *           type: string
+ *         description: Owner ID (defaults to current user)
+ *       - in: query
+ *         name: ownerType
+ *         schema:
+ *           type: string
+ *           enum: [business, individual]
+ *           default: individual
+ *         description: Owner type
+ *       - in: query
+ *         name: period
+ *         schema:
+ *           type: string
+ *           enum: [7d, 30d, 90d, 1y]
+ *           default: 30d
+ *         description: Time period
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           default: 10
+ *         description: Number of links to return
+ *     responses:
+ *       200:
+ *         description: Top performing links
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     topPerformingLinks:
+ *                       type: array
+ *                       items:
+ *                         type: object
+ *                         properties:
+ *                           targetId:
+ *                             type: string
+ *                           targetType:
+ *                             type: string
+ *                           targetUrl:
+ *                             type: string
+ *                           targetTitle:
+ *                             type: string
+ *                           targetThumbnail:
+ *                             type: string
+ *                           clicks:
+ *                             type: number
+ *                           uniqueClicks:
+ *                             type: number
+ *                           period:
+ *                             type: string
+ *                     period:
+ *                       type: string
+ *                     totalLinks:
+ *                       type: number
+ */
+router.get('/top-performing-links', auth.authenticate, getTopPerformingLinks);
+
+/**
+ * @swagger
+ * /api/analytics/content-performance/{targetId}:
+ *   get:
+ *     summary: Get content performance (based on Figma design)
+ *     tags: [Analytics]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: targetId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Target content ID
+ *       - in: query
+ *         name: targetType
+ *         required: false
+ *         schema:
+ *           type: string
+ *         description: Target content type (auto-detected if not provided)
+ *       - in: query
+ *         name: period
+ *         schema:
+ *           type: string
+ *           enum: [7d, 30d, 90d, 1y]
+ *           default: 30d
+ *         description: Time period
+ *     responses:
+ *       200:
+ *         description: Content performance data
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     targetId:
+ *                       type: string
+ *                     targetType:
+ *                       type: string
+ *                       description: Auto-detected content type
+ *                     url:
+ *                       type: string
+ *                     title:
+ *                       type: string
+ *                     thumbnail:
+ *                       type: string
+ *                     views:
+ *                       type: number
+ *                     clicks:
+ *                       type: number
+ *                     uniqueClicks:
+ *                       type: number
+ *                     ctr:
+ *                       type: number
+ *                     period:
+ *                       type: string
+ */
+router.get('/content-performance/:targetId', auth.authenticate, getContentPerformance);
+
+// ===== NEW SIMPLIFIED ENDPOINTS FOR LOGGED-IN USER =====
+
+/**
+ * @swagger
+ * /api/analytics/peak-hours:
+ *   get:
+ *     summary: Get peak hours analytics for logged-in user (all their content)
+ *     tags: [Analytics]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: dateRange
+ *         schema:
+ *           type: string
+ *           enum: [weekly, monthly, yearly, YYYY-MM-DD]
+ *         description: Date range for analytics (e.g., 'weekly', 'monthly', 'yearly', '2025-01-10')
+ *     responses:
+ *       200:
+ *         description: Peak hours analytics for user's content
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     analytics:
+ *                       type: array
+ *                       items:
+ *                         type: object
+ *                         properties:
+ *                           _id:
+ *                             type: number
+ *                           totalViews:
+ *                             type: number
+ *                           totalInteractions:
+ *                             type: number
+ *                           uniqueViewers:
+ *                             type: number
+ *                           engagementRate:
+ *                             type: string
+ *                     insights:
+ *                       type: object
+ *                       properties:
+ *                         peakHour:
+ *                           type: object
+ *                         quietestHour:
+ *                           type: object
+ *                         avgViewsPerHour:
+ *                           type: number
+ *                     summary:
+ *                       type: object
+ *                       properties:
+ *                         totalPeriods:
+ *                           type: number
+ *                         totalViews:
+ *                           type: number
+ *                         totalInteractions:
+ *                           type: number
+ *                         avgEngagementRate:
+ *                           type: string
+ */
+router.get('/peak-hours', auth.authenticate, getUserPeakHours);
+
+/**
+ * @swagger
+ * /api/analytics/location:
+ *   get:
+ *     summary: Get location analytics for logged-in user (all their content)
+ *     tags: [Analytics]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: dateRange
+ *         schema:
+ *           type: string
+ *           enum: [weekly, monthly, yearly, YYYY-MM-DD]
+ *         description: Date range for analytics
+ *       - in: query
+ *         name: groupBy
+ *         schema:
+ *           type: string
+ *           enum: [city, country, region]
+ *         description: Group by location type
+ *     responses:
+ *       200:
+ *         description: Location analytics for user's content
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     analytics:
+ *                       type: array
+ *                       items:
+ *                         type: object
+ *                         properties:
+ *                           longitude:
+ *                             type: number
+ *                           latitude:
+ *                             type: number
+ *                           city:
+ *                             type: string
+ *                           clicks:
+ *                             type: number
+ *                           uniqueClicks:
+ *                             type: number
+ *                           percentage:
+ *                             type: string
+ *                           lastClick:
+ *                             type: string
+ *                             format: date-time
+ *                     summary:
+ *                       type: object
+ *                       properties:
+ *                         totalViews:
+ *                           type: number
+ *                         totalUniqueViewers:
+ *                           type: number
+ *                         totalInteractions:
+ *                           type: number
+ *                         totalLocations:
+ *                           type: number
+ */
+router.get('/location', auth.authenticate, getUserLocation);
+
+/**
+ * @swagger
+ * /api/analytics/links:
+ *   get:
+ *     summary: Get links analytics for logged-in user (all their custom links)
+ *     tags: [Analytics]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: dateRange
+ *         schema:
+ *           type: string
+ *           enum: [weekly, monthly, yearly, YYYY-MM-DD]
+ *         description: Date range for analytics
+ *     responses:
+ *       200:
+ *         description: Links analytics for user's custom links
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     analytics:
+ *                       type: array
+ *                       items:
+ *                         type: object
+ *                         properties:
+ *                           targetUrl:
+ *                             type: string
+ *                           targetTitle:
+ *                             type: string
+ *                           clicks:
+ *                             type: number
+ *                           uniqueClicks:
+ *                             type: number
+ *                           percentage:
+ *                             type: string
+ *                     summary:
+ *                       type: object
+ *                       properties:
+ *                         totalLinks:
+ *                           type: number
+ *                         totalClicks:
+ *                           type: number
+ *                         totalUniqueClicks:
+ *                           type: number
+ */
+router.get('/links', auth.authenticate, getUserLinks);
 
 module.exports = router; 

@@ -119,6 +119,28 @@ const userSchema = new mongoose.Schema(
     isActiveSubscription: {
       type: Boolean,
       default: false
+    },
+
+    // LOCATION FIELDS
+    longitude: {
+      type: Number,
+      default: null
+    },
+    latitude: {
+      type: Number,
+      default: null
+    },
+    city: {
+      type: String,
+      default: null
+    },
+    address: {
+      type: String,
+      default: null
+    },
+    lastLocationUpdate: {
+      type: Date,
+      default: null
     }
 
   },

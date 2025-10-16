@@ -4,9 +4,11 @@ const Joi = require('joi');
 exports.validateLocationAnalytics = (data) => {
   const schema = Joi.object({
     targetId: Joi.string().required().regex(/^[0-9a-fA-F]{24}$/),
-    targetType: Joi.string().valid('business', 'profile', 'socialMedia', 'favorite', 'other').default('business'),
-    startDate: Joi.date().iso(),
-    endDate: Joi.date().iso().min(Joi.ref('startDate')),
+    targetType: Joi.string().valid('builderPage', 'customLink', 'view').optional(),
+    dateRange: Joi.alternatives().try(
+      Joi.string().valid('weekly', 'monthly', 'yearly'),
+      Joi.string().pattern(/^\d{4}-\d{2}-\d{2}$/) // YYYY-MM-DD format
+    ).optional(), // weekly, monthly, yearly, or specific date
     groupBy: Joi.string().valid('country', 'region', 'city').default('country'),
     limit: Joi.number().integer().min(1).max(100).default(50)
   });
@@ -18,9 +20,11 @@ exports.validateLocationAnalytics = (data) => {
 exports.validateLinkAnalytics = (data) => {
   const schema = Joi.object({
     targetId: Joi.string().required().regex(/^[0-9a-fA-F]{24}$/),
-    targetType: Joi.string().valid('business', 'profile', 'socialMedia', 'favorite', 'other').default('business'),
-    startDate: Joi.date().iso(),
-    endDate: Joi.date().iso().min(Joi.ref('startDate')),
+    targetType: Joi.string().valid('builderPage', 'customLink', 'view').optional(),
+    dateRange: Joi.alternatives().try(
+      Joi.string().valid('weekly', 'monthly', 'yearly'),
+      Joi.string().pattern(/^\d{4}-\d{2}-\d{2}$/) // YYYY-MM-DD format
+    ).optional(), // weekly, monthly, yearly, or specific date
     linkType: Joi.string().valid('social_media', 'website', 'phone', 'email', 'address', 'menu', 'booking', 'other'),
     groupBy: Joi.string().valid('linkType', 'platform').default('linkType'),
     limit: Joi.number().integer().min(1).max(50).default(20)
@@ -33,9 +37,11 @@ exports.validateLinkAnalytics = (data) => {
 exports.validatePeakHourAnalytics = (data) => {
   const schema = Joi.object({
     targetId: Joi.string().required().regex(/^[0-9a-fA-F]{24}$/),
-    targetType: Joi.string().valid('business', 'profile', 'socialMedia', 'favorite', 'other').default('business'),
-    startDate: Joi.date().iso(),
-    endDate: Joi.date().iso().min(Joi.ref('startDate')),
+    targetType: Joi.string().valid('builderPage', 'customLink', 'view').optional(),
+    dateRange: Joi.alternatives().try(
+      Joi.string().valid('weekly', 'monthly', 'yearly'),
+      Joi.string().pattern(/^\d{4}-\d{2}-\d{2}$/) // YYYY-MM-DD format
+    ).optional(), // weekly, monthly, yearly, or specific date
     groupBy: Joi.string().valid('hour', 'dayOfWeek', 'hourOfWeek').default('hour'),
     timezone: Joi.string().default('UTC')
   });
@@ -47,10 +53,11 @@ exports.validatePeakHourAnalytics = (data) => {
 exports.validateTimeFilteredAnalytics = (data) => {
   const schema = Joi.object({
     targetId: Joi.string().required().regex(/^[0-9a-fA-F]{24}$/),
-    targetType: Joi.string().valid('business', 'profile', 'socialMedia', 'favorite', 'other').default('business'),
-    timeframe: Joi.string().valid('week', 'month', 'year').default('month'),
-    startDate: Joi.date().iso(),
-    endDate: Joi.date().iso().min(Joi.ref('startDate')),
+    targetType: Joi.string().valid('builderPage', 'customLink', 'view').optional(),
+    dateRange: Joi.alternatives().try(
+      Joi.string().valid('weekly', 'monthly', 'yearly'),
+      Joi.string().pattern(/^\d{4}-\d{2}-\d{2}$/) // YYYY-MM-DD format
+    ).optional(), // weekly, monthly, yearly, or specific date
     groupBy: Joi.string().valid('hour', 'day', 'week', 'month').default('day')
   });
 
@@ -147,18 +154,11 @@ exports.validateViewLogCreation = (data) => {
 exports.validateAnalyticsDashboard = (data) => {
   const schema = Joi.object({
     targetId: Joi.string().required().regex(/^[0-9a-fA-F]{24}$/),
-    targetType: Joi.string().valid('business', 'profile', 'socialMedia', 'favorite', 'other').default('business'),
-    timeframe: Joi.string().valid('today', 'week', 'month', 'quarter', 'year', 'custom').default('month'),
-    startDate: Joi.date().iso().when('timeframe', {
-      is: 'custom',
-      then: Joi.required(),
-      otherwise: Joi.optional()
-    }),
-    endDate: Joi.date().iso().when('timeframe', {
-      is: 'custom',
-      then: Joi.required(),
-      otherwise: Joi.optional()
-    }),
+    targetType: Joi.string().valid('builderPage', 'customLink', 'view').optional(),
+    dateRange: Joi.alternatives().try(
+      Joi.string().valid('weekly', 'monthly', 'yearly'),
+      Joi.string().pattern(/^\d{4}-\d{2}-\d{2}$/) // YYYY-MM-DD format
+    ).optional(), // weekly, monthly, yearly, or specific date
     includeLocation: Joi.boolean().default(true),
     includeDevices: Joi.boolean().default(true),
     includeReferrals: Joi.boolean().default(true),
@@ -195,15 +195,43 @@ exports.validateBulkAnalytics = (data) => {
 exports.validateExportAnalytics = (data) => {
   const schema = Joi.object({
     targetId: Joi.string().required().regex(/^[0-9a-fA-F]{24}$/),
-    targetType: Joi.string().valid('business', 'profile', 'socialMedia', 'favorite', 'other').default('business'),
-    startDate: Joi.date().iso().required(),
-    endDate: Joi.date().iso().required().min(Joi.ref('startDate')),
+    targetType: Joi.string().valid('builderPage', 'customLink', 'view').optional(),
+    dateRange: Joi.alternatives().try(
+      Joi.string().valid('weekly', 'monthly', 'yearly'),
+      Joi.string().pattern(/^\d{4}-\d{2}-\d{2}$/) // YYYY-MM-DD format
+    ).optional(), // weekly, monthly, yearly, or specific date
     format: Joi.string().valid('json', 'csv', 'xlsx').default('json'),
     includeRawData: Joi.boolean().default(false),
     groupBy: Joi.string().valid('hour', 'day', 'week', 'month').default('day'),
     metrics: Joi.array().items(
       Joi.string().valid('views', 'clicks', 'engagement', 'locations', 'devices', 'referrals', 'peakHours')
     ).default(['views', 'clicks', 'engagement'])
+  });
+
+  return schema.validate(data);
+};
+
+// Validate top performing links query
+exports.validateTopPerformingLinks = (data) => {
+  const schema = Joi.object({
+    ownerId: Joi.string().regex(/^[0-9a-fA-F]{24}$/).optional(),
+    dateRange: Joi.alternatives().try(
+      Joi.string().valid('weekly', 'monthly', 'yearly'),
+      Joi.string().pattern(/^\d{4}-\d{2}-\d{2}$/) // YYYY-MM-DD format
+    ).optional(), // weekly, monthly, yearly, or specific date
+    limit: Joi.number().integer().min(1).max(100).default(10)
+  });
+
+  return schema.validate(data);
+};
+
+// Validate content performance query
+exports.validateContentPerformance = (data) => {
+  const schema = Joi.object({
+    dateRange: Joi.alternatives().try(
+      Joi.string().valid('weekly', 'monthly', 'yearly'),
+      Joi.string().pattern(/^\d{4}-\d{2}-\d{2}$/) // YYYY-MM-DD format
+    ).optional() // weekly, monthly, yearly, or specific date
   });
 
   return schema.validate(data);
@@ -264,6 +292,33 @@ exports.validateFunnelAnalytics = (data) => {
     groupBy: Joi.string().valid('day', 'week', 'month').default('day')
   });
 
+  return schema.validate(data);
+};
+
+// Validate click tracking
+exports.validateClickTracking = (data) => {
+  const schema = Joi.object({
+    targetId: Joi.string().required().regex(/^[0-9a-fA-F]{24}$/)
+  });
+  return schema.validate(data);
+};
+
+// Validate location update
+exports.validateLocationUpdate = (data) => {
+  const schema = Joi.object({
+    longitude: Joi.number().min(-180).max(180).required(),
+    latitude: Joi.number().min(-90).max(90).required()
+  });
+  return schema.validate(data);
+};
+
+// Validate collective analytics query
+exports.validateCollectiveAnalytics = (data) => {
+  const schema = Joi.object({
+    period: Joi.string().valid('7d', '30d', '90d', '1y').default('30d'),
+    startDate: Joi.date().iso(),
+    endDate: Joi.date().iso().min(Joi.ref('startDate'))
+  });
   return schema.validate(data);
 };
 
