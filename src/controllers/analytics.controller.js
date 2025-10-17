@@ -1284,7 +1284,14 @@ exports.trackClick = async (req, res) => {
 exports.trackView = async (req, res) => {
   try {
     const { targetId } = req.body;
-    const userId = req.user.id;
+    const userId = req.user?.id;
+    
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        message: "User not authenticated"
+      });
+    }
     
     console.log('=== TRACK VIEW DEBUG ===');
     console.log('Target ID:', targetId);

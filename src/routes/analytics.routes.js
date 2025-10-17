@@ -267,7 +267,7 @@ const auth = require('../middleware/auth.mw');
  *       400:
  *         description: Validation error
  */
-router.post('/track-view', trackView);
+router.post('/track-view', auth.authenticate, trackView);
 
 /**
  * @swagger
@@ -352,7 +352,7 @@ router.post('/track-view', trackView);
  *       401:
  *         description: Unauthorized
  */
-router.get('/location', auth.authenticate, getLocationAnalytics);
+// router.get('/location', auth.authenticate, getLocationAnalytics); // Removed - use getUserLocation instead
 
 /**
  * @swagger
@@ -445,7 +445,7 @@ router.get('/location', auth.authenticate, getLocationAnalytics);
  *       400:
  *         description: Validation error
  */
-router.get('/links', auth.authenticate, getLinkAnalytics);
+// router.get('/links', auth.authenticate, getLinkAnalytics); // Removed - use getUserLinks instead
 
 /**
  * @swagger
@@ -535,7 +535,7 @@ router.get('/links', auth.authenticate, getLinkAnalytics);
  *       400:
  *         description: Validation error
  */
-router.get('/peak-hours', auth.authenticate, getPeakHourAnalytics);
+// router.get('/peak-hours', auth.authenticate, getPeakHourAnalytics); // Removed - use getUserPeakHours instead
 
 /**
  * @swagger
