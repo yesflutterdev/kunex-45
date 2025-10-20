@@ -2385,23 +2385,44 @@ exports.getUserLocation = async (req, res) => {
     const analytics = await ClickTracking.aggregate([
       { $match: clickQuery },
       {
+        $lookup: {
+          from: 'users',
+          localField: 'userId',
+          foreignField: '_id',
+          as: 'userData'
+        }
+      },
+      {
+        $unwind: {
+          path: '$userData',
+          preserveNullAndEmptyArrays: true
+        }
+      },
+      {
         $group: {
           _id: {
-            longitude: '$longitude',
-            latitude: '$latitude'
+            city: {
+              $cond: {
+                if: { $and: [{ $ne: ['$userData.city', null] }, { $ne: ['$userData.city', ''] }] },
+                then: '$userData.city',
+                else: 'Unknown Location'
+              }
+            }
           },
           clicks: { $sum: 1 },
-          uniqueClicks: { $addToSet: '$userId' },
-          lastClick: { $max: '$timestamp' }
+          uniqueUsers: { $addToSet: '$userId' },
+          lastClick: { $max: '$timestamp' },
+          avgLongitude: { $avg: '$longitude' },
+          avgLatitude: { $avg: '$latitude' }
         }
       },
       {
         $project: {
-          longitude: '$_id.longitude',
-          latitude: '$_id.latitude',
-          city: { $concat: ['Location (', { $toString: '$_id.longitude' }, ', ', { $toString: '$_id.latitude' }, ')'] },
+          longitude: { $round: ['$avgLongitude', 6] },
+          latitude: { $round: ['$avgLatitude', 6] },
+          city: '$_id.city',
           clicks: 1,
-          uniqueClicks: { $size: '$uniqueClicks' },
+          uniqueClicks: { $size: '$uniqueUsers' },
           lastClick: 1,
           _id: 0
         }

@@ -378,7 +378,7 @@ exports.getFavorite = async (req, res, next) => {
             pageType: page.pageType,
             logo: page.logo,
             cover: page.cover,
-            isPublished: page.settings.isPublished,
+            isPublished: page.settings?.isPublished || false,
             priceRange: page.priceRange,
             location: page.location
           };
@@ -508,7 +508,7 @@ exports.updateFavorite = async (req, res, next) => {
             pageType: page.pageType,
             logo: page.logo,
             cover: page.cover,
-            isPublished: page.settings.isPublished,
+            isPublished: page.settings?.isPublished || false,
             priceRange: page.priceRange,
             location: page.location
           };
