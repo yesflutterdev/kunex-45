@@ -639,26 +639,19 @@ exports.googleCallback = (req, res, next) => {
     { session: false },
     async (err, user, info) => {
       try {
+        // Get the redirect URL from session or use default
+        const redirectUrl = req.session.redirectUrl || "myapp://auth/callback";
+
         if (err) {
           console.error("Google OAuth Error:", err);
-          return res.status(400).json({
-            success: false,
-            message: "OAuth error occurred",
-            error: err.message,
-          });
-          // return res.redirect(`${process.env.FRONTEND_URL}/login?
-          //   error=oauth_error`);
+          const errorRedirect = `${redirectUrl}?success=false&error=${encodeURIComponent(err.message)}`;
+          return res.redirect(errorRedirect);
         }
 
         if (!user) {
           console.error("Google OAuth - No user returned:", info);
-          return res.status(400).json({
-            success: false,
-            message: "Google authentication failed",
-            info,
-          });
-          // return res.redirect(`${process.env.FRONTEND_URL}/login?
-          //   error=google_auth_failed`);
+          const errorRedirect = `${redirectUrl}?success=false&error=Authentication failed`;
+          return res.redirect(errorRedirect);
         }
 
         // Generate tokens
@@ -669,64 +662,30 @@ exports.googleCallback = (req, res, next) => {
         const userAgent = req.headers["user-agent"];
         await user.recordLoginAttempt(ipAddress, userAgent, true, "google");
 
-        // Return success response
-        return res.status(200).json({
-          success: true,
-          message: "Google OAuth works fine!",
-          token,
-          refreshToken,
-          user: {
-            id: user._id,
-            email: user.email,
-            firstName: user.firstName,
-            lastName: user.lastName,
-            profilePicture: user.profilePicture,
-            role: user.role,
-            isVerified: user.isVerified,
-          },
-        });
+        // SUCCESS: Redirect back to app with tokens in URL
+        const successRedirect = `${redirectUrl}?success=true&token=${token}&refreshToken=${refreshToken}&user=${encodeURIComponent(JSON.stringify({
+          id: user._id,
+          email: user.email,
+          firstName: user.firstName,
+          lastName: user.lastName,
+          profilePicture: user.profilePicture,
+          role: user.role,
+          isVerified: user.isVerified,
+        }))}`;
 
-        //  // Get redirect URL from session or use default
-        //  const redirectUrl = req.session.redirectUrl || `${process.env.
-        //   FRONTEND_URL}/dashboard`;
-        //   delete req.session.redirectUrl;
+        console.log('Redirecting to:', successRedirect);
+        return res.redirect(successRedirect);
 
-        //   // For development/testing, you can return JSON instead of redirect
-        //   if (req.query.format === 'json') {
-        //     return res.status(200).json({
-        //       success: true,
-        //       message: 'Google login successful',
-        //       token,
-        //       refreshToken,
-        //       user: {
-        //         id: user._id,
-        //         email: user.email,
-        //         firstName: user.firstName,
-        //         lastName: user.lastName,
-        //         profilePicture: user.profilePicture,
-        //         role: user.role,
-        //         isVerified: user.isVerified,
-        //       },
-        //     });
-        //   }
-
-        //   // Redirect to frontend with tokens (for production)
-        //   const redirectWithTokens = `${redirectUrl}?token=${encodeURIComponent
-        //   (token)}&refreshToken=${encodeURIComponent(refreshToken)}`;
-        //   res.redirect(redirectWithTokens);
       } catch (error) {
         console.error("Google OAuth Callback Error:", error);
-        return res.status(500).json({
-          success: false,
-          message: "Server error occurred",
-          error: error.message,
-        });
-
-        // res.redirect(`${process.env.FRONTEND_URL}/login?error=server_error`);
+        const redirectUrl = req.session.redirectUrl || "myapp://auth/callback";
+        const errorRedirect = `${redirectUrl}?success=false&error=${encodeURIComponent(error.message)}`;
+        return res.redirect(errorRedirect);
       }
     }
   )(req, res, next);
 };
+
 
 // Link Google account to existing user
 exports.linkGoogleAccount = (req, res, next) => {
