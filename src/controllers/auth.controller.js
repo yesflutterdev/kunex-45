@@ -809,9 +809,25 @@ exports.googleMobileLogin = async (req, res) => {
     const userAgent = req.headers['user-agent'];
     await user.recordLoginAttempt(ipAddress, userAgent, true, 'google');
 
-    res.json({
+    // res.json({
+    //   success: true,
+    //   message: 'Google login successful',
+    //   token,
+    //   refreshToken,
+    //   user: {
+    //     id: user._id,
+    //     email: user.email,
+    //     firstName: user.firstName,
+    //     lastName: user.lastName,
+    //     profilePicture: user.profilePicture,
+    //     role: user.role,
+    //     isVerified: user.isVerified,
+    //   },
+    // });
+
+    res.status(200).json({
       success: true,
-      message: 'Google login successful',
+      message: "Google login successful",
       token,
       refreshToken,
       user: {
@@ -819,9 +835,9 @@ exports.googleMobileLogin = async (req, res) => {
         email: user.email,
         firstName: user.firstName,
         lastName: user.lastName,
-        profilePicture: user.profilePicture,
         role: user.role,
-        isVerified: user.isVerified,
+        isUserFillsInitialData: user.isUserFillsInitialData,
+        planSubscribedTo: user.planSubscribedTo,
       },
     });
 
