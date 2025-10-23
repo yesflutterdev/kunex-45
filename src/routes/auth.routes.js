@@ -405,6 +405,7 @@ router.post('/test-email', authController.testEmail);
 
 router.post('/send-otp-code', authController.sendForgotPasswordCode);
 router.post('/verify-otp-code', authController.verifyForgotPasswordCode);
+router.post('/google-mobile-approach', authController.googleMobileLogin);
 
 
 module.exports = router;
