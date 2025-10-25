@@ -20,7 +20,9 @@ const {
   getWidgetPreview,
   getWidgetTypes,
   reorderProducts,
-  deleteProduct
+  deleteProduct,
+  updateProduct,
+  insertProduct
 } = require('../controllers/widget.controller');
 
 /**
@@ -1279,5 +1281,97 @@ router.put('/:id/products/reorder', auth, reorderProducts);
  *         description: Widget or product not found
  */
 router.delete('/:id/products/:productId', auth, deleteProduct);
+
+/**
+ * @swagger
+ * /api/builder/widgets/{id}/products/{productId}:
+ *   put:
+ *     summary: Update a specific product in a products widget
+ *     tags: [Widgets]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Widget ID
+ *       - in: path
+ *         name: productId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Product ID to update
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               productName:
+ *                 type: string
+ *                 description: Product name
+ *               productDescription:
+ *                 type: string
+ *                 description: Product description
+ *               productPrice:
+ *                 type: number
+ *                 description: Product price
+ *               productImage:
+ *                 type: string
+ *                 description: Product image URL
+ *               productCategory:
+ *                 type: string
+ *                 description: Product category
+ *               productStock:
+ *                 type: number
+ *                 description: Available stock
+ *               productSku:
+ *                 type: string
+ *                 description: Product SKU
+ *               productTags:
+ *                 type: array
+ *                 items:
+ *                   type: string
+ *                 description: Product tags
+ *               isActive:
+ *                 type: boolean
+ *                 description: Whether product is active
+ *     responses:
+ *       200:
+ *         description: Product updated successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 message:
+ *                   type: string
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     widget:
+ *                       $ref: '#/components/schemas/Widget'
+ *                     updatedProduct:
+ *                       type: object
+ *                       description: The updated product object
+ *       400:
+ *         description: Invalid product ID format or widget is not a products widget
+ *       401:
+ *         description: Unauthorized
+ *       403:
+ *         description: No permission to access this widget
+ *       404:
+ *         description: Widget or product not found
+ */
+// Insert a new product into products widget
+router.post('/:id/products', auth, insertProduct);
+
+// Update specific product in products widget
+router.put('/:id/products/:productId', auth, updateProduct);
 
 module.exports = router; 

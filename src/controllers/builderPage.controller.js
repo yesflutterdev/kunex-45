@@ -1,6 +1,7 @@
 const BuilderPage = require('../models/builderPage.model');
 const Widget = require('../models/widget.model');
 const BusinessProfile = require('../models/businessProfile.model');
+const FormSubmission = require('../models/formSubmission.model');
 const { uploadToCloudinary, deleteImage } = require('../utils/cloudinary');
 
 // Create a new builder page
@@ -774,6 +775,126 @@ exports.getCallToAction = async (req, res, next) => {
     res.status(200).json({
       success: true,
       data: { callToAction: page.callToAction }
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// Get all form submissions for a builder page
+exports.getPageFormData = async (req, res, next) => {
+  try {
+    const userId = req.user.id;
+    const { pageId } = req.params;
+    const { 
+      status, 
+      priority, 
+      submissionType, 
+      page = 1, 
+      limit = 10,
+      sortBy = 'createdAt',
+      sortOrder = 'desc'
+    } = req.query;
+
+    // Verify the page belongs to the user
+    const pageExists = await BuilderPage.findOne({ 
+      _id: pageId, 
+      userId 
+    });
+
+    if (!pageExists) {
+      return res.status(404).json({
+        success: false,
+        message: 'Page not found or access denied'
+      });
+    }
+
+    // Build query filters
+    const query = { pageId };
+    if (status) query.status = status;
+    if (priority) query.priority = priority;
+    if (submissionType) query.submissionType = submissionType;
+
+    // Get form submissions with pagination
+    const submissions = await FormSubmission.find(query)
+      .populate('widgetId', 'name type')
+      .populate('userId', 'username email')
+      .sort({ [sortBy]: sortOrder === 'desc' ? -1 : 1 })
+      .skip((parseInt(page) - 1) * parseInt(limit))
+      .limit(parseInt(limit));
+
+    // Get total count for pagination
+    const totalSubmissions = await FormSubmission.countDocuments(query);
+
+    // Get statistics
+    const stats = await FormSubmission.aggregate([
+      { $match: { pageId: pageExists._id } },
+      {
+        $group: {
+          _id: null,
+          total: { $sum: 1 },
+          new: { $sum: { $cond: [{ $eq: ['$status', 'new'] }, 1, 0] } },
+          read: { $sum: { $cond: [{ $eq: ['$status', 'read'] }, 1, 0] } },
+          replied: { $sum: { $cond: [{ $eq: ['$status', 'replied'] }, 1, 0] } },
+          archived: { $sum: { $cond: [{ $eq: ['$status', 'archived'] }, 1, 0] } },
+          spam: { $sum: { $cond: [{ $eq: ['$status', 'spam'] }, 1, 0] } }
+        }
+      }
+    ]);
+
+    // Group submissions by widget/form
+    const groupedSubmissions = {};
+    let formCounter = 1;
+    
+    submissions.forEach(submission => {
+      const widgetId = submission.widgetId?._id?.toString() || 'unknown';
+      const widgetName = submission.widgetId?.name || 'Unknown Form';
+      
+      if (!groupedSubmissions[widgetId]) {
+        groupedSubmissions[widgetId] = {
+          formId: `form_${formCounter}`,
+          formName: submission.widgetId?.name || `Form ${formCounter}`,
+          formFields: submission.formFields?.map(field => ({
+            fieldName: field.name,
+            fieldType: field.type,
+            fieldLabel: field.label,
+            isRequired: field.required
+          })) || [],
+          submissions: []
+        };
+        formCounter++;
+      }
+      
+      // Add form data to the group
+      groupedSubmissions[widgetId].submissions.push({
+        submissionId: `sub_${groupedSubmissions[widgetId].submissions.length + 1}`,
+        submittedData: submission.formData,
+        submissionStatus: submission.status,
+        submittedAt: submission.createdAt
+      });
+    });
+
+    // Convert to array format
+    const formsArray = Object.values(groupedSubmissions);
+
+    res.status(200).json({
+      success: true,
+      data: formsArray,
+      pagination: {
+        currentPage: parseInt(page),
+        totalPages: Math.ceil(totalSubmissions / parseInt(limit)),
+        totalSubmissions,
+        hasNextPage: parseInt(page) < Math.ceil(totalSubmissions / parseInt(limit)),
+        hasPrevPage: parseInt(page) > 1
+      },
+      stats: stats[0] || {
+        total: 0,
+        new: 0,
+        read: 0,
+        replied: 0,
+        archived: 0,
+        spam: 0
+      }
     });
   } catch (error) {
     next(error);

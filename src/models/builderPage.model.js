@@ -242,7 +242,7 @@ const builderPageSchema = new mongoose.Schema(
     settings: {
       isPublished: {
         type: Boolean,
-        default: false
+        default: true
       },
       isDraft: {
         type: Boolean,

@@ -898,4 +898,162 @@ exports.deleteProduct = async (req, res, next) => {
   } catch (error) {
     next(error);
   }
+};
+
+// Update specific product in products widget - accepts any fields
+exports.updateProduct = async (req, res, next) => {
+  try {
+    const userId = req.user.id;
+    const { id, productId } = req.params;
+    const updateData = req.body;
+
+    // Validate productId format
+    if (!mongoose.Types.ObjectId.isValid(productId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid product ID format'
+      });
+    }
+
+    // Check if updateData is not empty
+    if (!updateData || Object.keys(updateData).length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'At least one field must be provided for update'
+      });
+    }
+
+    // Find the widget and verify product exists
+    const widget = await Widget.findOne({ _id: id, userId });
+    if (!widget) {
+      // Check if widget exists but belongs to different user
+      const anyWidget = await Widget.findById(id);
+      if (anyWidget) {
+        return res.status(403).json({
+          success: false,
+          message: 'You do not have permission to access this widget'
+        });
+      }
+      
+      return res.status(404).json({
+        success: false,
+        message: 'Widget not found'
+      });
+    }
+
+    // Check if it's a products widget
+    if (widget.type !== 'products') {
+      return res.status(400).json({
+        success: false,
+        message: 'Widget is not a products widget'
+      });
+    }
+
+    // Find the product index
+    const productIndex = widget.settings.specific.products.findIndex(
+      p => p._id.toString() === productId
+    );
+
+    if (productIndex === -1) {
+      return res.status(404).json({
+        success: false,
+        message: 'Product not found in widget'
+      });
+    }
+
+    // Update the product with any provided fields (merge with existing data)
+    const updatedProduct = {
+      ...widget.settings.specific.products[productIndex],
+      ...updateData,
+      _id: widget.settings.specific.products[productIndex]._id // Preserve the original ID
+    };
+
+    // Update the product in the array
+    widget.settings.specific.products[productIndex] = updatedProduct;
+    await widget.save();
+
+    res.status(200).json({
+      success: true,
+      message: 'Product updated successfully',
+      data: { 
+        widget: {
+          id: widget._id,
+          name: widget.name,
+          type: widget.type,
+          category: widget.category,
+          products: widget.settings.specific.products
+        }
+      }
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// Insert a single product into a products widget
+exports.insertProduct = async (req, res, next) => {
+  try {
+    const userId = req.user.id;
+    const { id } = req.params;
+    const productData = req.body;
+
+    // Find the widget
+    const widget = await Widget.findOne({ _id: id, userId });
+    if (!widget) {
+      // Check if widget exists but belongs to different user
+      const anyWidget = await Widget.findById(id);
+      if (anyWidget) {
+        return res.status(403).json({
+          success: false,
+          message: 'You do not have permission to access this widget'
+        });
+      }
+      
+      return res.status(404).json({
+        success: false,
+        message: 'Widget not found'
+      });
+    }
+
+    // Check if it's a products widget
+    if (widget.type !== 'products') {
+      return res.status(400).json({
+        success: false,
+        message: 'Widget is not a products widget'
+      });
+    }
+
+    // Initialize products array if it doesn't exist
+    if (!widget.settings.specific.products) {
+      widget.settings.specific.products = [];
+    }
+
+    // Create new product with generated ID
+    const newProduct = {
+      ...productData,
+      _id: new mongoose.Types.ObjectId()
+    };
+
+    // Add product to the array
+    widget.settings.specific.products.push(newProduct);
+    await widget.save();
+
+    res.status(200).json({
+      success: true,
+      message: 'Product inserted successfully',
+      data: { 
+        widget: {
+          id: widget._id,
+          name: widget.name,
+          type: widget.type,
+          category: widget.category,
+          products: widget.settings.specific.products
+        },
+        insertedProduct: newProduct,
+        totalProducts: widget.settings.specific.products.length
+      }
+    });
+  } catch (error) {
+    next(error);
+  }
 }; 

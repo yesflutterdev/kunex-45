@@ -25,6 +25,7 @@ const builderPageRoutes = require('./routes/builderPage.routes');
 const widgetRoutes = require('./routes/widget.routes');
 const formSubmissionRoutes = require('./routes/formSubmission.routes');
 const communityRoutes = require('./routes/community.routes');
+const supportRoutes = require('./routes/support.routes');
 const swaggerSpec = require('./docs/swagger');
 const errorHandler = require('./middleware/error-handler.mw.js');
 
@@ -92,6 +93,7 @@ app.use('/api/builder/pages', builderPageRoutes);
 app.use('/api/builder/widgets', widgetRoutes);
 app.use('/api/forms', formSubmissionRoutes);
 app.use('/api/community', communityRoutes);
+app.use('/api/support', supportRoutes);
 app.use('/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 
 app.get('/', (req, res) => {

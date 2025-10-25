@@ -22,7 +22,8 @@ const {
   getSocialLinks,
   updateSocialLinks,
   getCallToAction,
-  updateCallToAction
+  updateCallToAction,
+  getPageFormData
 } = builderPageController;
 
 /**
@@ -960,5 +961,150 @@ router.get('/:pageId/call-to-action', getCallToAction);
  *         description: Unauthorized
  */
 router.put('/:pageId/call-to-action', auth, updateCallToAction);
+
+/**
+ * @swagger
+ * /api/builder-pages/{pageId}/form-data:
+ *   get:
+ *     summary: Get all form submissions for a builder page
+ *     tags: [Builder Pages]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: pageId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Builder page ID
+ *       - in: query
+ *         name: status
+ *         schema:
+ *           type: string
+ *           enum: [new, read, replied, archived, spam]
+ *         description: Filter by submission status
+ *       - in: query
+ *         name: priority
+ *         schema:
+ *           type: string
+ *           enum: [low, medium, high, urgent]
+ *         description: Filter by priority
+ *       - in: query
+ *         name: submissionType
+ *         schema:
+ *           type: string
+ *           enum: [contact, newsletter, booking, inquiry, feedback, custom]
+ *         description: Filter by submission type
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *           minimum: 1
+ *           default: 1
+ *         description: Page number
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           minimum: 1
+ *           maximum: 100
+ *           default: 10
+ *         description: Items per page
+ *       - in: query
+ *         name: sortBy
+ *         schema:
+ *           type: string
+ *           enum: [createdAt, updatedAt, status, priority]
+ *           default: createdAt
+ *         description: Sort field
+ *       - in: query
+ *         name: sortOrder
+ *         schema:
+ *           type: string
+ *           enum: [asc, desc]
+ *           default: desc
+ *         description: Sort order
+ *     responses:
+ *       200:
+ *         description: Form submissions retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     submissions:
+ *                       type: array
+ *                       items:
+ *                         type: object
+ *                         properties:
+ *                           id:
+ *                             type: string
+ *                           widgetId:
+ *                             type: string
+ *                           widgetName:
+ *                             type: string
+ *                           widgetType:
+ *                             type: string
+ *                           formData:
+ *                             type: object
+ *                           formFields:
+ *                             type: array
+ *                           submissionType:
+ *                             type: string
+ *                           status:
+ *                             type: string
+ *                           priority:
+ *                             type: string
+ *                           user:
+ *                             type: object
+ *                             properties:
+ *                               id:
+ *                                 type: string
+ *                               username:
+ *                                 type: string
+ *                               email:
+ *                                 type: string
+ *                           createdAt:
+ *                             type: string
+ *                             format: date-time
+ *                     pagination:
+ *                       type: object
+ *                       properties:
+ *                         currentPage:
+ *                           type: integer
+ *                         totalPages:
+ *                           type: integer
+ *                         totalSubmissions:
+ *                           type: integer
+ *                         hasNextPage:
+ *                           type: boolean
+ *                         hasPrevPage:
+ *                           type: boolean
+ *                     stats:
+ *                       type: object
+ *                       properties:
+ *                         total:
+ *                           type: integer
+ *                         new:
+ *                           type: integer
+ *                         read:
+ *                           type: integer
+ *                         replied:
+ *                           type: integer
+ *                         archived:
+ *                           type: integer
+ *                         spam:
+ *                           type: integer
+ *       404:
+ *         description: Page not found
+ *       401:
+ *         description: Unauthorized
+ */
+router.get('/:pageId/form-data', auth, getPageFormData);
 
 module.exports = router; 
