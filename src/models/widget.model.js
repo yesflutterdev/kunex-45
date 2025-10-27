@@ -224,30 +224,17 @@ const widgetSchema = new mongoose.Schema(
 
       // Type-specific settings
       specific: {
-        type: mongoose.Schema.Types.Mixed,
+        //type: mongoose.Schema.Types.Mixed,
         default: {},
 
         // Custom Link fields
         customLink: [
           {
-            title: {
-              type: String,
-              default: ''
-            },
-            url: {
-              type: String,
-              default: ''
-            },
-            style: {
-              type: String,
-              enum: ['button', 'rectangular'],
-              default: 'rectangular'
-            },
-            imageUrl: {
-              type: String,
-              default: ''
-            }
-          }
+            title: { type: String, default: '' },
+            url: { type: String, default: '' },
+            style: { type: String, enum: ['button', 'rectangular'], default: 'rectangular' },
+            imageUrl: { type: String, default: '' },
+          },
         ],
 
 
@@ -654,11 +641,7 @@ widgetSchema.methods.validateTypeSpecificSettings = function () {
         throw new Error('Button widget requires text');
       }
       break;
-    case 'custom_link':
-      if (!settings.specific.customLink?.title || !settings.specific.customLink?.url) {
-        throw new Error('Custom link widget requires title and URL');
-      }
-      break;
+
     case 'media':
       const mediaType = settings.specific.media?.mediaType;
       if (mediaType === 'photo') {
