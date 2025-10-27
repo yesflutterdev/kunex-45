@@ -791,6 +791,8 @@ exports.googleMobileLogin = async (req, res) => {
 
     let user = await User.findOne({ email });
 
+    const googleId = idToken && idToken.trim() !== '' ? idToken : `google-${uuidv4()}`;
+
     if (!user) {
       user = new User({
         email,
@@ -799,6 +801,7 @@ exports.googleMobileLogin = async (req, res) => {
         profilePicture: photoUrl,
         authProvider: 'google',
         isVerified: true,
+        googleId: googleId
       });
       await user.save();
     }
