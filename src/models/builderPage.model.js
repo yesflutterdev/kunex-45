@@ -8,12 +8,60 @@ const daySchema = new mongoose.Schema({
   },
   startTime: {
     type: String,
-    required: true,
+    required: function() {
+      return !this.isClosed;
+    },
+    default: ''
   },
   endTime: {
     type: String,
-    required: true,
+    required: function() {
+      return !this.isClosed;
+    },
+    default: ''
   },
+  isClosed: {
+    type: Boolean,
+    default: false,
+  },
+});
+
+const eventDateSchema = new mongoose.Schema({
+  eventName: {
+    type: String,
+    required: true,
+    trim: true,
+    maxlength: 100
+  },
+  eventDate: {
+    type: Date,
+    required: true
+  },
+  startTime: {
+    type: String,
+    required: true
+  },
+  endTime: {
+    type: String,
+    required: true
+  },
+  description: {
+    type: String,
+    trim: true,
+    maxlength: 500
+  },
+  isRecurring: {
+    type: Boolean,
+    default: false
+  },
+  recurringPattern: {
+    type: String,
+    enum: ['daily', 'weekly', 'monthly', 'yearly'],
+    default: 'weekly'
+  },
+  recurringEndDate: {
+    type: Date
+  }
 });
 
 const builderPageSchema = new mongoose.Schema(
@@ -26,6 +74,11 @@ const builderPageSchema = new mongoose.Schema(
     businessId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'BusinessProfile'
+    },
+    folderId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Folder',
+      default: null
     },
     title: {
       type: String,
@@ -56,6 +109,11 @@ const builderPageSchema = new mongoose.Schema(
       trim: true,
     },
     serviceHours: {
+      type: {
+        type: String,
+        enum: ['weekly', 'event-dates', 'both'],
+        default: 'weekly'
+      },
       sameForAll: {
         type: Boolean,
         default: false,
@@ -64,7 +122,21 @@ const builderPageSchema = new mongoose.Schema(
         startTime: { type: String },
         endTime: { type: String },
       },
-      hours: [daySchema], // only required if sameForAll = false
+      weeklyHours: [daySchema], // Daily hours for each day of the week
+      eventDates: [eventDateSchema], // Specific event dates
+      timezone: {
+        type: String,
+        default: 'UTC'
+      },
+      is24Hours: {
+        type: Boolean,
+        default: false
+      },
+      notes: {
+        type: String,
+        trim: true,
+        maxlength: 500
+      }
     },
     logo: {
       type: String,
@@ -534,6 +606,104 @@ builderPageSchema.methods.unpublish = function () {
   this.settings.isPublished = false;
   this.settings.isDraft = true;
   return this.save();
+};
+
+// Service Hours Methods
+builderPageSchema.methods.setWeeklyHours = function (weeklyHoursData) {
+  this.serviceHours.type = 'weekly';
+  this.serviceHours.weeklyHours = weeklyHoursData;
+  return this.save();
+};
+
+builderPageSchema.methods.addEventDate = function (eventData) {
+  if (!this.serviceHours.eventDates) {
+    this.serviceHours.eventDates = [];
+  }
+  this.serviceHours.eventDates.push(eventData);
+  
+  if (this.serviceHours.type === 'weekly') {
+    this.serviceHours.type = 'both';
+  } else if (this.serviceHours.type !== 'both') {
+    this.serviceHours.type = 'event-dates';
+  }
+  
+  return this.save();
+};
+
+builderPageSchema.methods.removeEventDate = function (eventId) {
+  this.serviceHours.eventDates = this.serviceHours.eventDates.filter(
+    event => event._id.toString() !== eventId
+  );
+  
+  // Update type if no more event dates
+  if (this.serviceHours.eventDates.length === 0 && this.serviceHours.type === 'both') {
+    this.serviceHours.type = 'weekly';
+  } else if (this.serviceHours.eventDates.length === 0 && this.serviceHours.type === 'event-dates') {
+    this.serviceHours.type = 'weekly';
+  }
+  
+  return this.save();
+};
+
+builderPageSchema.methods.updateEventDate = function (eventId, updateData) {
+  const event = this.serviceHours.eventDates.id(eventId);
+  if (!event) {
+    throw new Error('Event not found');
+  }
+  
+  Object.assign(event, updateData);
+  return this.save();
+};
+
+builderPageSchema.methods.getCurrentHours = function () {
+  const now = new Date();
+  const currentDay = now.toLocaleDateString('en-US', { weekday: 'short' });
+  const currentTime = now.toTimeString().slice(0, 5);
+  
+  // Check weekly hours first
+  if (this.serviceHours.type === 'weekly' || this.serviceHours.type === 'both') {
+    const todayHours = this.serviceHours.weeklyHours.find(
+      hours => hours.day === currentDay
+    );
+    
+    if (todayHours && !todayHours.isClosed) {
+      return {
+        isOpen: currentTime >= todayHours.startTime && currentTime <= todayHours.endTime,
+        startTime: todayHours.startTime,
+        endTime: todayHours.endTime,
+        type: 'weekly'
+      };
+    }
+  }
+  
+  // Check event dates
+  if (this.serviceHours.type === 'event-dates' || this.serviceHours.type === 'both') {
+    const todayEvents = this.serviceHours.eventDates.filter(event => {
+      const eventDate = new Date(event.eventDate);
+      return eventDate.toDateString() === now.toDateString();
+    });
+    
+    if (todayEvents.length > 0) {
+      const currentEvent = todayEvents.find(event => 
+        currentTime >= event.startTime && currentTime <= event.endTime
+      );
+      
+      if (currentEvent) {
+        return {
+          isOpen: true,
+          startTime: currentEvent.startTime,
+          endTime: currentEvent.endTime,
+          eventName: currentEvent.eventName,
+          type: 'event'
+        };
+      }
+    }
+  }
+  
+  return {
+    isOpen: false,
+    type: 'closed'
+  };
 };
 
 builderPageSchema.methods.incrementViews = function () {

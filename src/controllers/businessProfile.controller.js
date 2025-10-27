@@ -1,4 +1,6 @@
 const BusinessProfile = require('../models/businessProfile.model');
+const BuilderPage = require('../models/builderPage.model');
+const Folder = require('../models/folder.model');
 const User = require('../models/user.model');
 const { uploadToCloudinary, deleteImage, extractPublicId } = require('../utils/cloudinary');
 const {
@@ -58,6 +60,51 @@ exports.createProfile = async (req, res, next) => {
 
     await profile.save();
 
+    // Create or get default folder
+    let defaultFolder = await Folder.findOne({ 
+      userId, 
+      name: 'My Favorites',
+      isDefault: true 
+    });
+    
+    if (!defaultFolder) {
+      defaultFolder = new Folder({
+        userId,
+        name: 'My Favorites',
+        isDefault: true,
+        description: 'Default folder for favorites'
+      });
+      await defaultFolder.save();
+    }
+
+    // Create corresponding builder page
+    const builderPageData = {
+      userId,
+      businessId: profile._id,
+      folderId: defaultFolder._id,
+      title: value.businessName || 'Untitled Page',
+      slug: value.username || `page-${Date.now()}`,
+      description: value.description?.short || '',
+      priceRange: value.priceRange || '$',
+      location: value.location?.address || '',
+      logo: value.logo || '',
+      username: value.username || '',
+      pageType: 'landing', // Default to landing page
+      template: {
+        name: 'Business Landing Page',
+        category: 'business', // Map businessType to template category
+        version: '1.0'
+      },
+      isPublished: true
+    };
+
+    const builderPage = new BuilderPage(builderPageData);
+    await builderPage.save();
+
+    // Update profile with folderId
+    profile.folderId = defaultFolder._id;
+    await profile.save();
+
     // Populate user data
     await profile.populate('userId', 'email firstName lastName');
 
@@ -65,9 +112,14 @@ exports.createProfile = async (req, res, next) => {
 
     res.status(201).json({
       success: true,
-      message: 'Business profile created successfully',
+      message: 'Business profile and builder page created successfully',
       data: {
         profile,
+        builderPage: {
+          id: builderPage._id,
+          title: builderPage.title,
+          slug: builderPage.slug
+        },
         completionPercentage: profile.completionPercentage,
       },
     });

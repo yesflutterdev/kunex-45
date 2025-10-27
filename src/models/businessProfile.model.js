@@ -288,6 +288,11 @@ const businessProfileSchema = new mongoose.Schema(
         type: String // URL to photo
       }
     },
+    folderId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Folder',
+      default: null
+    },
     metrics: {
       viewCount: {
         type: Number,

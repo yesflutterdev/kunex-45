@@ -23,7 +23,13 @@ const {
   updateSocialLinks,
   getCallToAction,
   updateCallToAction,
-  getPageFormData
+  getPageFormData,
+  getServiceHours,
+  updateWeeklyHours,
+  addEventDate,
+  updateEventDate,
+  removeEventDate,
+  getCurrentHours
 } = builderPageController;
 
 /**
@@ -1106,5 +1112,287 @@ router.put('/:pageId/call-to-action', auth, updateCallToAction);
  *         description: Unauthorized
  */
 router.get('/:pageId/form-data', auth, getPageFormData);
+
+// Service Hours Routes
+
+/**
+ * @swagger
+ * /api/builder/pages/{pageId}/service-hours:
+ *   get:
+ *     summary: Get service hours for a page
+ *     tags: [Builder Pages]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: pageId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Page ID
+ *     responses:
+ *       200:
+ *         description: Service hours retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     serviceHours:
+ *                       type: object
+ *                     currentHours:
+ *                       type: object
+ *                     isCurrentlyOpen:
+ *                       type: boolean
+ *       404:
+ *         description: Page not found
+ */
+router.get('/:pageId/service-hours', auth, getServiceHours);
+
+/**
+ * @swagger
+ * /api/builder/pages/{pageId}/service-hours/weekly:
+ *   put:
+ *     summary: Update weekly service hours
+ *     tags: [Builder Pages]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: pageId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Page ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - weeklyHours
+ *             properties:
+ *               weeklyHours:
+ *                 type: array
+ *                 items:
+ *                   type: object
+ *                   properties:
+ *                     day:
+ *                       type: string
+ *                       enum: [Mon, Tues, Wed, Thur, Fri, Sat, Sun]
+ *                     startTime:
+ *                       type: string
+ *                       pattern: '^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$'
+ *                     endTime:
+ *                       type: string
+ *                       pattern: '^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$'
+ *                     isClosed:
+ *                       type: boolean
+ *                       default: false
+ *               timezone:
+ *                 type: string
+ *                 default: 'UTC'
+ *               notes:
+ *                 type: string
+ *                 maxLength: 500
+ *     responses:
+ *       200:
+ *         description: Weekly hours updated successfully
+ *       400:
+ *         description: Invalid weekly hours data
+ *       404:
+ *         description: Page not found
+ */
+router.put('/:pageId/service-hours/weekly', auth, updateWeeklyHours);
+
+/**
+ * @swagger
+ * /api/builder/pages/{pageId}/service-hours/events:
+ *   post:
+ *     summary: Add event date
+ *     tags: [Builder Pages]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: pageId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Page ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - eventName
+ *               - eventDate
+ *               - startTime
+ *               - endTime
+ *             properties:
+ *               eventName:
+ *                 type: string
+ *                 maxLength: 100
+ *               eventDate:
+ *                 type: string
+ *                 format: date
+ *               startTime:
+ *                 type: string
+ *                 pattern: '^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$'
+ *               endTime:
+ *                 type: string
+ *                 pattern: '^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$'
+ *               description:
+ *                 type: string
+ *                 maxLength: 500
+ *               isRecurring:
+ *                 type: boolean
+ *                 default: false
+ *               recurringPattern:
+ *                 type: string
+ *                 enum: [daily, weekly, monthly, yearly]
+ *                 default: weekly
+ *               recurringEndDate:
+ *                 type: string
+ *                 format: date
+ *     responses:
+ *       201:
+ *         description: Event date added successfully
+ *       400:
+ *         description: Invalid event data
+ *       404:
+ *         description: Page not found
+ */
+router.post('/:pageId/service-hours/events', auth, addEventDate);
+
+/**
+ * @swagger
+ * /api/builder/pages/{pageId}/service-hours/events/{eventId}:
+ *   put:
+ *     summary: Update event date
+ *     tags: [Builder Pages]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: pageId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Page ID
+ *       - in: path
+ *         name: eventId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Event ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               eventName:
+ *                 type: string
+ *               eventDate:
+ *                 type: string
+ *                 format: date
+ *               startTime:
+ *                 type: string
+ *               endTime:
+ *                 type: string
+ *               description:
+ *                 type: string
+ *               isRecurring:
+ *                 type: boolean
+ *               recurringPattern:
+ *                 type: string
+ *               recurringEndDate:
+ *                 type: string
+ *                 format: date
+ *     responses:
+ *       200:
+ *         description: Event date updated successfully
+ *       404:
+ *         description: Page or event not found
+ */
+router.put('/:pageId/service-hours/events/:eventId', auth, updateEventDate);
+
+/**
+ * @swagger
+ * /api/builder/pages/{pageId}/service-hours/events/{eventId}:
+ *   delete:
+ *     summary: Remove event date
+ *     tags: [Builder Pages]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: pageId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Page ID
+ *       - in: path
+ *         name: eventId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Event ID
+ *     responses:
+ *       200:
+ *         description: Event date removed successfully
+ *       404:
+ *         description: Page not found
+ */
+router.delete('/:pageId/service-hours/events/:eventId', auth, removeEventDate);
+
+/**
+ * @swagger
+ * /api/builder/pages/{pageId}/service-hours/current:
+ *   get:
+ *     summary: Get current hours status
+ *     tags: [Builder Pages]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: pageId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Page ID
+ *     responses:
+ *       200:
+ *         description: Current hours status retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     currentHours:
+ *                       type: object
+ *                     isCurrentlyOpen:
+ *                       type: boolean
+ *                     serviceHoursType:
+ *                       type: string
+ *       404:
+ *         description: Page not found
+ */
+router.get('/:pageId/service-hours/current', auth, getCurrentHours);
 
 module.exports = router; 

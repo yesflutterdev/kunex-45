@@ -48,50 +48,12 @@ exports.createPage = async (req, res, next) => {
     // Create page data
     const pageData = {
       userId,
-      businessId,
       title,
       slug,
       description,
       pageType,
-      template: {
-        name: template.name,
-        version: template.version || '1.0',
-        category: template.category
-      },
-      layout: {
-        structure: 'single-column',
-        sections: [
-          {
-            id: 'header',
-            type: 'header',
-            order: 1,
-            visible: true,
-            settings: {}
-          },
-          {
-            id: 'hero',
-            type: 'hero',
-            order: 2,
-            visible: true,
-            settings: {}
-          },
-          {
-            id: 'content',
-            type: 'content',
-            order: 3,
-            visible: true,
-            settings: {}
-          },
-          {
-            id: 'footer',
-            type: 'footer',
-            order: 4,
-            visible: true,
-            settings: {}
-          }
-        ],
-        gridSystem: 'bootstrap'
-      }
+      template,
+      businessId: businessId || null
     };
 
     const page = new BuilderPage(pageData);
@@ -99,7 +61,7 @@ exports.createPage = async (req, res, next) => {
 
     res.status(201).json({
       success: true,
-      message: 'Builder page created successfully',
+      message: 'Page created successfully',
       data: { page }
     });
   } catch (error) {
@@ -107,7 +69,7 @@ exports.createPage = async (req, res, next) => {
   }
 };
 
-// Get all pages for a user
+// Get all pages for authenticated user
 exports.getPages = async (req, res, next) => {
   try {
     const userId = req.user.id;
@@ -124,30 +86,48 @@ exports.getPages = async (req, res, next) => {
 
     // Build query
     const query = { userId };
-    if (businessId) query.businessId = businessId;
-    if (pageType) query.pageType = pageType;
-    if (status === 'published') query['settings.isPublished'] = true;
-    if (status === 'draft') query['settings.isDraft'] = true;
 
-    // Add search if provided
-    if (search) {
-      query.$text = { $search: search };
+    if (businessId) {
+      query.businessId = businessId;
     }
+
+    if (pageType) {
+      query.pageType = pageType;
+    }
+
+    if (status) {
+      if (status === 'published') {
+        query['settings.isPublished'] = true;
+      } else if (status === 'draft') {
+        query['settings.isDraft'] = true;
+      }
+    }
+
+    if (search) {
+      query.$or = [
+        { title: { $regex: search, $options: 'i' } },
+        { description: { $regex: search, $options: 'i' } },
+        { slug: { $regex: search, $options: 'i' } }
+      ];
+    }
+
+    // Build sort object
+    const sort = {};
+    sort[sortBy] = sortOrder === 'asc' ? 1 : -1;
 
     // Calculate pagination
     const skip = (parseInt(page) - 1) * parseInt(limit);
-    const sort = { [sortBy]: sortOrder === 'desc' ? -1 : 1 };
 
-    // Get pages
+    // Execute query
     const pages = await BuilderPage.find(query)
-      .populate('businessId', 'businessName username')
+      .populate('businessId', 'businessName username logo')
       .sort(sort)
       .skip(skip)
-      .limit(parseInt(limit))
-      .select('-versions');
+      .limit(parseInt(limit));
 
-    // Get total count
-    const total = await BuilderPage.countDocuments(query);
+    const totalPages = await BuilderPage.countDocuments(query);
+    const totalItems = totalPages;
+    const totalPagesCount = Math.ceil(totalPages / parseInt(limit));
 
     res.status(200).json({
       success: true,
@@ -155,9 +135,9 @@ exports.getPages = async (req, res, next) => {
         pages,
         pagination: {
           current: parseInt(page),
-          total: Math.ceil(total / parseInt(limit)),
+          total: totalPagesCount,
           count: pages.length,
-          totalItems: total
+          totalItems
         }
       }
     });
@@ -166,15 +146,15 @@ exports.getPages = async (req, res, next) => {
   }
 };
 
-// Get a specific page by ID
+// Get page by ID
 exports.getPageById = async (req, res, next) => {
   try {
     const userId = req.user.id;
     const { pageId } = req.params;
 
     const page = await BuilderPage.findOne({ _id: pageId, userId })
-      .populate('businessId', 'businessName username themeColor')
-      .populate('userId', 'email username');
+      .populate('businessId', 'businessName username logo')
+      .populate('widgets');
 
     if (!page) {
       return res.status(404).json({
@@ -184,8 +164,7 @@ exports.getPageById = async (req, res, next) => {
     }
 
     // Get widgets for this page
-    const widgets = await Widget.find({ pageId: pageId })
-      .sort({ order: 1 });
+    const widgets = await Widget.find({ pageId });
 
     res.status(200).json({
       success: true,
@@ -204,9 +183,9 @@ exports.getPageById = async (req, res, next) => {
 exports.getPublicPage = async (req, res, next) => {
   try {
     const { slug, username } = req.params;
-    
+
     let query = { slug, 'settings.isPublished': true };
-    
+
     // If username is provided, find by business username
     if (username) {
       const business = await BusinessProfile.findOne({ username });
@@ -220,8 +199,8 @@ exports.getPublicPage = async (req, res, next) => {
     }
 
     const page = await BuilderPage.findOne(query)
-      .populate('businessId', 'businessName username themeColor contactInfo location')
-      .populate('userId', 'username');
+      .populate('businessId', 'businessName username logo')
+      .populate('widgets');
 
     if (!page) {
       return res.status(404).json({
@@ -230,15 +209,11 @@ exports.getPublicPage = async (req, res, next) => {
       });
     }
 
-    // Get visible widgets for this page
-    const widgets = await Widget.find({
-      pageId: page._id,
-      status: 'active',
-      isVisible: true
-    }).sort({ order: 1 });
-
-    // Increment page views
+    // Increment view count
     await page.incrementViews();
+
+    // Get widgets for this page
+    const widgets = await Widget.find({ pageId: page._id });
 
     res.status(200).json({
       success: true,
@@ -290,6 +265,42 @@ exports.updatePage = async (req, res, next) => {
     // Update page
     Object.assign(page, updateData);
     await page.save();
+
+    // Sync data with BusinessProfile if businessId exists
+    if (page.businessId) {
+      const syncData = {};
+      
+      // Map builder page fields to business profile fields
+      if (updateData.title) syncData.businessName = updateData.title;
+      if (updateData.username) syncData.username = updateData.username;
+      if (updateData.logo) syncData.logo = updateData.logo;
+      if (updateData.priceRange) syncData.priceRange = updateData.priceRange;
+      if (updateData.location) {
+        // Convert location string to object
+        syncData.location = {
+          address: updateData.location,
+          city: '',
+          state: '',
+          country: '',
+          postalCode: '',
+          coordinates: {
+            type: 'Point',
+            coordinates: [0, 0] // Default coordinates
+          }
+        };
+      }
+      // Note: pageType in BuilderPage is different from businessType in BusinessProfile
+      // We don't sync pageType to businessType as they serve different purposes
+      
+      // Update business profile if there are changes
+      if (Object.keys(syncData).length > 0) {
+        await BusinessProfile.findByIdAndUpdate(
+          page.businessId,
+          { $set: syncData },
+          { new: true }
+        );
+      }
+    }
 
     res.status(200).json({
       success: true,
@@ -389,15 +400,22 @@ exports.clonePage = async (req, res, next) => {
     const { pageId } = req.params;
     const { title, slug } = req.body;
 
+    if (!slug) {
+      return res.status(400).json({
+        success: false,
+        message: 'Slug is required for cloned page'
+      });
+    }
+
     const originalPage = await BuilderPage.findOne({ _id: pageId, userId });
     if (!originalPage) {
       return res.status(404).json({
         success: false,
-        message: 'Page not found'
+        message: 'Original page not found'
       });
     }
 
-    // Check if new slug is unique
+    // Check if slug is unique
     const existingPage = await BuilderPage.findOne({ userId, slug });
     if (existingPage) {
       return res.status(400).json({
@@ -406,30 +424,27 @@ exports.clonePage = async (req, res, next) => {
       });
     }
 
-    // Clone page
-    const clonedData = originalPage.toObject();
-    delete clonedData._id;
-    delete clonedData.createdAt;
-    delete clonedData.updatedAt;
-    delete clonedData.__v;
-    delete clonedData.versions;
-    delete clonedData.analytics;
-    delete clonedData.publishedAt;
-
-    clonedData.title = title || `${originalPage.title} (Copy)`;
-    clonedData.slug = slug;
-    clonedData.settings.isPublished = false;
-    clonedData.settings.isDraft = true;
+    // Create cloned page data
+    const clonedData = {
+      userId,
+      title: title || `${originalPage.title} (Copy)`,
+      slug,
+      description: originalPage.description,
+      pageType: originalPage.pageType,
+      template: originalPage.template,
+      layout: originalPage.layout,
+      styling: originalPage.styling,
+      seo: originalPage.seo,
+      settings: {
+        ...originalPage.settings,
+        isPublished: false,
+        isDraft: true
+      },
+      businessId: originalPage.businessId
+    };
 
     const clonedPage = new BuilderPage(clonedData);
     await clonedPage.save();
-
-    // Clone widgets
-    const widgets = await Widget.find({ pageId: pageId });
-    for (const widget of widgets) {
-      const clonedWidget = widget.clone(userId, clonedPage._id);
-      await clonedWidget.save();
-    }
 
     res.status(201).json({
       success: true,
@@ -447,9 +462,7 @@ exports.getPageVersions = async (req, res, next) => {
     const userId = req.user.id;
     const { pageId } = req.params;
 
-    const page = await BuilderPage.findOne({ _id: pageId, userId })
-      .select('versions title slug');
-
+    const page = await BuilderPage.findOne({ _id: pageId, userId });
     if (!page) {
       return res.status(404).json({
         success: false,
@@ -476,6 +489,13 @@ exports.revertToVersion = async (req, res, next) => {
     const { pageId } = req.params;
     const { versionNumber } = req.body;
 
+    if (!versionNumber) {
+      return res.status(400).json({
+        success: false,
+        message: 'Version number is required'
+      });
+    }
+
     const page = await BuilderPage.findOne({ _id: pageId, userId });
     if (!page) {
       return res.status(404).json({
@@ -484,22 +504,20 @@ exports.revertToVersion = async (req, res, next) => {
       });
     }
 
-    try {
-      page.revertToVersion(versionNumber);
-      await page.save();
+    await page.revertToVersion(versionNumber);
 
-      res.status(200).json({
-        success: true,
-        message: 'Page reverted successfully',
-        data: { page }
-      });
-    } catch (error) {
+    res.status(200).json({
+      success: true,
+      message: 'Page reverted successfully',
+      data: { page }
+    });
+  } catch (error) {
+    if (error.message === 'Version not found') {
       return res.status(400).json({
         success: false,
-        message: error.message
+        message: 'Version not found'
       });
     }
-  } catch (error) {
     next(error);
   }
 };
@@ -511,9 +529,7 @@ exports.getPageAnalytics = async (req, res, next) => {
     const { pageId } = req.params;
     const { period = '30d' } = req.query;
 
-    const page = await BuilderPage.findOne({ _id: pageId, userId })
-      .select('analytics title slug');
-
+    const page = await BuilderPage.findOne({ _id: pageId, userId });
     if (!page) {
       return res.status(404).json({
         success: false,
@@ -521,16 +537,38 @@ exports.getPageAnalytics = async (req, res, next) => {
       });
     }
 
-    // Get widget analytics for this page
-    const widgets = await Widget.find({ pageId })
-      .select('name type analytics');
+    // Get widgets for analytics
+    const widgets = await Widget.find({ pageId });
 
-    const widgetAnalytics = widgets.map(widget => ({
-      id: widget._id,
-      name: widget.name,
-      type: widget.type,
-      analytics: widget.analytics
-    }));
+    // Calculate date range
+    const now = new Date();
+    let startDate;
+    
+    switch (period) {
+      case '7d':
+        startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+        break;
+      case '30d':
+        startDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+        break;
+      case '90d':
+        startDate = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
+        break;
+      default:
+        startDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+    }
+
+    // Basic analytics summary
+    const summary = {
+      pageViews: page.analytics.pageViews,
+      uniqueVisitors: page.analytics.uniqueVisitors,
+      bounceRate: page.analytics.bounceRate,
+      avgTimeOnPage: page.analytics.avgTimeOnPage,
+      conversionRate: page.analytics.conversionRate,
+      period,
+      startDate,
+      endDate: now
+    };
 
     res.status(200).json({
       success: true,
@@ -538,16 +576,16 @@ exports.getPageAnalytics = async (req, res, next) => {
         page: {
           id: page._id,
           title: page.title,
-          slug: page.slug,
-          analytics: page.analytics
+          slug: page.slug
         },
-        widgets: widgetAnalytics,
-        summary: {
-          totalViews: page.analytics.pageViews,
-          totalWidgetViews: widgets.reduce((sum, w) => sum + w.analytics.views, 0),
-          totalWidgetClicks: widgets.reduce((sum, w) => sum + w.analytics.clicks, 0),
-          widgetCount: widgets.length
-        }
+        widgets: widgets.map(widget => ({
+          id: widget._id,
+          name: widget.name,
+          type: widget.type,
+          views: widget.analytics?.views || 0,
+          clicks: widget.analytics?.clicks || 0
+        })),
+        summary
       }
     });
   } catch (error) {
@@ -555,7 +593,7 @@ exports.getPageAnalytics = async (req, res, next) => {
   }
 };
 
-// Search pages
+// Search public pages
 exports.searchPages = async (req, res, next) => {
   try {
     const { q, category, pageType, published = true } = req.query;
@@ -567,19 +605,35 @@ exports.searchPages = async (req, res, next) => {
       });
     }
 
-    const filters = {};
-    if (category) filters['template.category'] = category;
-    if (pageType) filters.pageType = pageType;
-    if (published === 'true') filters['settings.isPublished'] = true;
+    // Build query
+    const query = {
+      'settings.isPublished': published === 'true',
+      $or: [
+        { title: { $regex: q, $options: 'i' } },
+        { description: { $regex: q, $options: 'i' } },
+        { slug: { $regex: q, $options: 'i' } }
+      ]
+    };
 
-    const pages = await BuilderPage.searchPages(q, filters)
-      .populate('businessId', 'businessName username')
-      .populate('userId', 'username')
+    if (category) {
+      query['template.category'] = category;
+    }
+
+    if (pageType) {
+      query.pageType = pageType;
+    }
+
+    const pages = await BuilderPage.find(query)
+      .populate('businessId', 'businessName username logo')
       .limit(20);
 
     res.status(200).json({
       success: true,
-      data: { pages }
+      data: {
+        pages,
+        query: q,
+        filters: { category, pageType, published }
+      }
     });
   } catch (error) {
     next(error);
@@ -591,32 +645,34 @@ exports.getPageTemplates = async (req, res, next) => {
   try {
     const { category, pageType } = req.query;
 
-    // This would typically come from a templates database or file system
-    // For now, returning a static list
+    // Mock templates data - in real app, this would come from a templates collection
     const templates = [
       {
-        name: 'Modern Business',
+        id: 'business-landing',
+        name: 'Business Landing Page',
         category: 'business',
         pageType: 'landing',
-        description: 'Clean and modern business landing page',
-        preview: '/templates/modern-business.jpg',
-        features: ['Responsive', 'SEO Optimized', 'Contact Form']
+        description: 'Professional landing page for businesses',
+        preview: '/templates/business-landing.jpg',
+        features: ['Hero section', 'About section', 'Contact form', 'Social links']
       },
       {
+        id: 'portfolio-showcase',
         name: 'Portfolio Showcase',
         category: 'portfolio',
         pageType: 'portfolio',
-        description: 'Elegant portfolio showcase template',
+        description: 'Showcase your work and projects',
         preview: '/templates/portfolio-showcase.jpg',
-        features: ['Gallery', 'Project Details', 'Contact Section']
+        features: ['Project gallery', 'Skills section', 'Testimonials', 'Resume download']
       },
       {
-        name: 'Restaurant Menu',
-        category: 'restaurant',
+        id: 'ecommerce-store',
+        name: 'E-commerce Store',
+        category: 'ecommerce',
         pageType: 'product',
-        description: 'Beautiful restaurant menu template',
-        preview: '/templates/restaurant-menu.jpg',
-        features: ['Menu Display', 'Pricing', 'Reservations']
+        description: 'Online store for selling products',
+        preview: '/templates/ecommerce-store.jpg',
+        features: ['Product catalog', 'Shopping cart', 'Payment integration', 'Order tracking']
       }
     ];
 
@@ -632,46 +688,51 @@ exports.getPageTemplates = async (req, res, next) => {
 
     res.status(200).json({
       success: true,
-      data: { templates: filteredTemplates }
+      data: {
+        templates: filteredTemplates
+      }
     });
   } catch (error) {
     next(error);
   }
 };
 
-// Update social links for a page
+// Get social links
+exports.getSocialLinks = async (req, res, next) => {
+  try {
+    const { pageId } = req.params;
+
+    const page = await BuilderPage.findOne({ _id: pageId });
+    if (!page) {
+      return res.status(404).json({
+        success: false,
+        message: 'Page not found'
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      data: {
+        socialLinks: page.socialLinks || []
+      }
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// Update social links
 exports.updateSocialLinks = async (req, res, next) => {
   try {
     const userId = req.user.id;
     const { pageId } = req.params;
     const { socialLinks } = req.body;
 
-    // Validate social links array
-    if (!Array.isArray(socialLinks)) {
+    if (!socialLinks || !Array.isArray(socialLinks)) {
       return res.status(400).json({
         success: false,
-        message: 'socialLinks must be an array'
+        message: 'Social links array is required'
       });
-    }
-
-    // Validate each social link
-    for (const link of socialLinks) {
-      if (!link.platform || !link.url) {
-        return res.status(400).json({
-          success: false,
-          message: 'Each social link must have platform and url'
-        });
-      }
-
-      // Validate URL format
-      try {
-        new URL(link.url);
-      } catch (error) {
-        return res.status(400).json({
-          success: false,
-          message: `Invalid URL format for ${link.platform}`
-        });
-      }
     }
 
     const page = await BuilderPage.findOne({ _id: pageId, userId });
@@ -682,32 +743,90 @@ exports.updateSocialLinks = async (req, res, next) => {
       });
     }
 
-    // Update social links
+    // Validate social links
+    const validPlatforms = ['facebook', 'twitter', 'linkedin', 'instagram', 'youtube', 'tiktok', 'pinterest', 'snapchat', 'whatsapp', 'telegram', 'discord', 'reddit', 'github', 'website', 'blog', 'other'];
+    
+    for (const link of socialLinks) {
+      if (!link.platform || !link.url) {
+        return res.status(400).json({
+          success: false,
+          message: 'Platform and URL are required for each social link'
+        });
+      }
+
+      if (!validPlatforms.includes(link.platform)) {
+        return res.status(400).json({
+          success: false,
+          message: `Invalid platform: ${link.platform}`
+        });
+      }
+    }
+
     page.socialLinks = socialLinks;
     await page.save();
 
     res.status(200).json({
       success: true,
       message: 'Social links updated successfully',
-      data: { socialLinks: page.socialLinks }
+      data: {
+        socialLinks: page.socialLinks
+      }
     });
   } catch (error) {
     next(error);
   }
 };
 
-// Update call-to-action button configuration
+// Get call to action
+exports.getCallToAction = async (req, res, next) => {
+  try {
+    const { pageId } = req.params;
+
+    const page = await BuilderPage.findOne({ _id: pageId });
+    if (!page) {
+      return res.status(404).json({
+        success: false,
+        message: 'Page not found'
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      data: {
+        callToAction: page.callToAction || {
+          enabled: false,
+          button: {
+            text: 'Get Started',
+            bgColor: '#007bff',
+            textColor: '#ffffff',
+            radius: 8,
+            action: 'open_url',
+            actionData: {},
+            size: { width: 200, height: 50 },
+            position: 'bottom-center',
+            isFloating: false,
+            showOnScroll: false,
+            scrollThreshold: 50
+          }
+        }
+      }
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// Update call to action
 exports.updateCallToAction = async (req, res, next) => {
   try {
     const userId = req.user.id;
     const { pageId } = req.params;
     const { callToAction } = req.body;
 
-    // Validate call-to-action configuration
-    if (!callToAction || typeof callToAction !== 'object') {
+    if (!callToAction) {
       return res.status(400).json({
         success: false,
-        message: 'callToAction must be an object'
+        message: 'Call to action data is required'
       });
     }
 
@@ -719,116 +838,80 @@ exports.updateCallToAction = async (req, res, next) => {
       });
     }
 
-    // Update call-to-action configuration
-    page.callToAction = { ...page.callToAction, ...callToAction };
+    page.callToAction = callToAction;
     await page.save();
 
     res.status(200).json({
       success: true,
-      message: 'Call-to-action updated successfully',
-      data: { callToAction: page.callToAction }
+      message: 'Call to action updated successfully',
+      data: {
+        callToAction: page.callToAction
+      }
     });
   } catch (error) {
     next(error);
   }
 };
 
-// Get social links for a page
-exports.getSocialLinks = async (req, res, next) => {
-  try {
-    const { pageId } = req.params;
-
-    const page = await BuilderPage.findById(pageId)
-      .select('socialLinks businessId userId');
-
-    if (!page) {
-      return res.status(404).json({
-        success: false,
-        message: 'Page not found'
-      });
-    }
-
-    res.status(200).json({
-      success: true,
-      data: { socialLinks: page.socialLinks }
-    });
-  } catch (error) {
-    next(error);
-  }
-};
-
-// Get call-to-action configuration for a page
-exports.getCallToAction = async (req, res, next) => {
-  try {
-    const { pageId } = req.params;
-
-    const page = await BuilderPage.findById(pageId)
-      .select('callToAction businessId userId');
-
-    if (!page) {
-      return res.status(404).json({
-        success: false,
-        message: 'Page not found'
-      });
-    }
-
-    res.status(200).json({
-      success: true,
-      data: { callToAction: page.callToAction }
-    });
-  } catch (error) {
-    next(error);
-  }
-};
-
-// Get all form submissions for a builder page
+// Get form data for a page
 exports.getPageFormData = async (req, res, next) => {
   try {
     const userId = req.user.id;
     const { pageId } = req.params;
-    const { 
-      status, 
-      priority, 
-      submissionType, 
-      page = 1, 
+    const {
+      status,
+      priority,
+      submissionType,
+      page = 1,
       limit = 10,
       sortBy = 'createdAt',
       sortOrder = 'desc'
     } = req.query;
 
-    // Verify the page belongs to the user
-    const pageExists = await BuilderPage.findOne({ 
-      _id: pageId, 
-      userId 
-    });
-
+    // Verify page ownership
+    const pageExists = await BuilderPage.findOne({ _id: pageId, userId });
     if (!pageExists) {
       return res.status(404).json({
         success: false,
-        message: 'Page not found or access denied'
+        message: 'Page not found'
       });
     }
 
-    // Build query filters
+    // Build query for form submissions
     const query = { pageId };
-    if (status) query.status = status;
-    if (priority) query.priority = priority;
-    if (submissionType) query.submissionType = submissionType;
 
-    // Get form submissions with pagination
+    if (status) {
+      query.status = status;
+    }
+
+    if (priority) {
+      query.priority = priority;
+    }
+
+    if (submissionType) {
+      query.submissionType = submissionType;
+    }
+
+    // Build sort object
+    const sort = {};
+    sort[sortBy] = sortOrder === 'asc' ? 1 : -1;
+
+    // Calculate pagination
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+
+    // Get form submissions
     const submissions = await FormSubmission.find(query)
       .populate('widgetId', 'name type')
       .populate('userId', 'username email')
-      .sort({ [sortBy]: sortOrder === 'desc' ? -1 : 1 })
-      .skip((parseInt(page) - 1) * parseInt(limit))
+      .sort(sort)
+      .skip(skip)
       .limit(parseInt(limit));
 
-    // Get total count for pagination
     const totalSubmissions = await FormSubmission.countDocuments(query);
 
     // Get statistics
     const stats = await FormSubmission.aggregate([
-      { $match: { pageId: pageExists._id } },
+      { $match: { pageId } },
       {
         $group: {
           _id: null,
@@ -842,24 +925,23 @@ exports.getPageFormData = async (req, res, next) => {
       }
     ]);
 
-    // Group submissions by widget/form
+    // Group submissions by widget
     const groupedSubmissions = {};
     let formCounter = 1;
-    
+
     submissions.forEach(submission => {
-      const widgetId = submission.widgetId?._id?.toString() || 'unknown';
-      const widgetName = submission.widgetId?.name || 'Unknown Form';
+      const widgetId = submission.widgetId._id.toString();
       
       if (!groupedSubmissions[widgetId]) {
         groupedSubmissions[widgetId] = {
-          formId: `form_${formCounter}`,
-          formName: submission.widgetId?.name || `Form ${formCounter}`,
-          formFields: submission.formFields?.map(field => ({
-            fieldName: field.name,
-            fieldType: field.type,
-            fieldLabel: field.label,
-            isRequired: field.required
-          })) || [],
+          formId: `form${formCounter}`,
+          formName: submission.widgetId.name || `Form ${formCounter}`,
+          formFields: submission.formFields.map(field => ({
+            name: field.name,
+            type: field.type,
+            label: field.label,
+            required: field.required
+          })),
           submissions: []
         };
         formCounter++;
@@ -899,4 +981,247 @@ exports.getPageFormData = async (req, res, next) => {
   } catch (error) {
     next(error);
   }
-}; 
+};
+
+// Service Hours Management
+
+// Get service hours for a page
+exports.getServiceHours = async (req, res, next) => {
+  try {
+    const userId = req.user.id;
+    const { pageId } = req.params;
+
+    const page = await BuilderPage.findOne({ _id: pageId, userId });
+    if (!page) {
+      return res.status(404).json({
+        success: false,
+        message: 'Page not found'
+      });
+    }
+
+    const currentHours = page.getCurrentHours();
+
+    res.status(200).json({
+      success: true,
+      data: {
+        serviceHours: page.serviceHours,
+        currentHours,
+        isCurrentlyOpen: currentHours.isOpen
+      }
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// Update weekly service hours
+exports.updateWeeklyHours = async (req, res, next) => {
+  try {
+    const userId = req.user.id;
+    const { pageId } = req.params;
+    const { weeklyHours, timezone, notes } = req.body;
+
+    const page = await BuilderPage.findOne({ _id: pageId, userId });
+    if (!page) {
+      return res.status(404).json({
+        success: false,
+        message: 'Page not found'
+      });
+    }
+
+    // Validate weekly hours data
+    if (!weeklyHours || !Array.isArray(weeklyHours)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Weekly hours data is required'
+      });
+    }
+
+    // Validate each day's hours
+    const validDays = ['Mon', 'Tues', 'Wed', 'Thur', 'Fri', 'Sat', 'Sun'];
+    for (const dayHours of weeklyHours) {
+      if (!validDays.includes(dayHours.day)) {
+        return res.status(400).json({
+          success: false,
+          message: `Invalid day: ${dayHours.day}`
+        });
+      }
+      
+      if (!dayHours.isClosed && (!dayHours.startTime || !dayHours.endTime)) {
+        return res.status(400).json({
+          success: false,
+          message: `Start time and end time are required for ${dayHours.day}`
+        });
+      }
+    }
+
+    // Update service hours
+    page.serviceHours.weeklyHours = weeklyHours;
+    if (timezone) page.serviceHours.timezone = timezone;
+    if (notes) page.serviceHours.notes = notes;
+    
+    await page.setWeeklyHours(weeklyHours);
+
+    res.status(200).json({
+      success: true,
+      message: 'Weekly hours updated successfully',
+      data: {
+        serviceHours: page.serviceHours,
+        currentHours: page.getCurrentHours()
+      }
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// Add event date
+exports.addEventDate = async (req, res, next) => {
+  try {
+    const userId = req.user.id;
+    const { pageId } = req.params;
+    const eventData = req.body;
+
+    const page = await BuilderPage.findOne({ _id: pageId, userId });
+    if (!page) {
+      return res.status(404).json({
+        success: false,
+        message: 'Page not found'
+      });
+    }
+
+    // Validate event data
+    const requiredFields = ['eventName', 'eventDate', 'startTime', 'endTime'];
+    for (const field of requiredFields) {
+      if (!eventData[field]) {
+        return res.status(400).json({
+          success: false,
+          message: `${field} is required`
+        });
+      }
+    }
+
+    // Validate date
+    const eventDate = new Date(eventData.eventDate);
+    if (isNaN(eventDate.getTime())) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid event date'
+      });
+    }
+
+    // Validate time format (HH:MM)
+    const timeRegex = /^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/;
+    if (!timeRegex.test(eventData.startTime) || !timeRegex.test(eventData.endTime)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid time format. Use HH:MM format'
+      });
+    }
+
+    await page.addEventDate(eventData);
+
+    res.status(201).json({
+      success: true,
+      message: 'Event date added successfully',
+      data: {
+        eventDate: eventData,
+        serviceHours: page.serviceHours
+      }
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// Update event date
+exports.updateEventDate = async (req, res, next) => {
+  try {
+    const userId = req.user.id;
+    const { pageId, eventId } = req.params;
+    const updateData = req.body;
+
+    const page = await BuilderPage.findOne({ _id: pageId, userId });
+    if (!page) {
+      return res.status(404).json({
+        success: false,
+        message: 'Page not found'
+      });
+    }
+
+    await page.updateEventDate(eventId, updateData);
+
+    res.status(200).json({
+      success: true,
+      message: 'Event date updated successfully',
+      data: {
+        serviceHours: page.serviceHours
+      }
+    });
+  } catch (error) {
+    if (error.message === 'Event not found') {
+      return res.status(404).json({
+        success: false,
+        message: 'Event not found'
+      });
+    }
+    next(error);
+  }
+};
+
+// Remove event date
+exports.removeEventDate = async (req, res, next) => {
+  try {
+    const userId = req.user.id;
+    const { pageId, eventId } = req.params;
+
+    const page = await BuilderPage.findOne({ _id: pageId, userId });
+    if (!page) {
+      return res.status(404).json({
+        success: false,
+        message: 'Page not found'
+      });
+    }
+
+    await page.removeEventDate(eventId);
+
+    res.status(200).json({
+      success: true,
+      message: 'Event date removed successfully',
+      data: {
+        serviceHours: page.serviceHours
+      }
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// Get current hours status
+exports.getCurrentHours = async (req, res, next) => {
+  try {
+    const userId = req.user.id;
+    const { pageId } = req.params;
+
+    const page = await BuilderPage.findOne({ _id: pageId, userId });
+    if (!page) {
+      return res.status(404).json({
+        success: false,
+        message: 'Page not found'
+      });
+    }
+
+    const currentHours = page.getCurrentHours();
+
+    res.status(200).json({
+      success: true,
+      data: {
+        currentHours,
+        isCurrentlyOpen: currentHours.isOpen,
+        serviceHoursType: page.serviceHours.type
+      }
+    });
+  } catch (error) {
+    next(error);
+  }
+};
