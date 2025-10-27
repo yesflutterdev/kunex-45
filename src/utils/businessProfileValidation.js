@@ -39,57 +39,57 @@ exports.validateCreateBusinessProfile = (data) => {
         'Others'
       )
       .allow(''),
-    industry: Joi.string().trim().max(100).required(),
-    subIndustry: Joi.string().trim().max(100).allow(''),
-    industryTags: Joi.array().items(Joi.string().trim().max(50)).max(10),
+    // industry: Joi.string().trim().max(100).required(),
+    // subIndustry: Joi.string().trim().max(100).allow(''),
+    // industryTags: Joi.array().items(Joi.string().trim().max(50)).max(10),
     description: Joi.object({
       short: Joi.string().trim().max(200).allow(''),
       full: Joi.string().trim().max(2000).allow('')
     }),
-    priceRange: Joi.string().valid('$', '$$', '$$$', '$$$$').allow(''),
-    contactInfo: Joi.object({
-      email: Joi.string().email().trim().lowercase().allow(''),
-      phone: Joi.string().trim().max(20).allow(''),
-      website: Joi.string().uri().trim().allow('')
-    }),
-    location: Joi.object({
-      isOnlineOnly: Joi.boolean().default(false),
-      address: Joi.string().trim().max(200).allow(''),
-      city: Joi.string().trim().max(100).allow(''),
-      state: Joi.string().trim().max(100).allow(''),
-      country: Joi.string().trim().max(100).allow(''),
-      postalCode: Joi.string().trim().max(20).allow(''),
-      coordinates: Joi.object({
-        type: Joi.string().valid('Point').default('Point'),
-        coordinates: Joi.array()
-          .items(Joi.number())
-          .length(2)
-          .custom((value, helpers) => {
-            const [longitude, latitude] = value;
-            if (longitude < -180 || longitude > 180) {
-              return helpers.error('coordinates.longitude');
-            }
-            if (latitude < -90 || latitude > 90) {
-              return helpers.error('coordinates.latitude');
-            }
-            return value;
-          })
-          .messages({
-            'coordinates.longitude': 'Longitude must be between -180 and 180',
-            'coordinates.latitude': 'Latitude must be between -90 and 90'
-          })
-      })
-    }),
-    businessHours: Joi.array().items(
-      Joi.object({
-        day: Joi.string()
-          .valid('Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday')
-          .required(),
-        open: Joi.string().pattern(/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/).allow(''),
-        close: Joi.string().pattern(/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/).allow(''),
-        isClosed: Joi.boolean().default(false)
-      })
-    ).max(7),
+    // priceRange: Joi.string().valid('$', '$$', '$$$', '$$$$').allow(''),
+    // contactInfo: Joi.object({
+    //   email: Joi.string().email().trim().lowercase().allow(''),
+    //   phone: Joi.string().trim().max(20).allow(''),
+    //   website: Joi.string().uri().trim().allow('')
+    // }),
+    // location: Joi.object({
+    //   isOnlineOnly: Joi.boolean().default(false),
+    //   address: Joi.string().trim().max(200).allow(''),
+    //   city: Joi.string().trim().max(100).allow(''),
+    //   state: Joi.string().trim().max(100).allow(''),
+    //   country: Joi.string().trim().max(100).allow(''),
+    //   postalCode: Joi.string().trim().max(20).allow(''),
+    //   coordinates: Joi.object({
+    //     type: Joi.string().valid('Point').default('Point'),
+    //     coordinates: Joi.array()
+    //       .items(Joi.number())
+    //       .length(2)
+    //       .custom((value, helpers) => {
+    //         const [longitude, latitude] = value;
+    //         if (longitude < -180 || longitude > 180) {
+    //           return helpers.error('coordinates.longitude');
+    //         }
+    //         if (latitude < -90 || latitude > 90) {
+    //           return helpers.error('coordinates.latitude');
+    //         }
+    //         return value;
+    //       })
+    //       .messages({
+    //         'coordinates.longitude': 'Longitude must be between -180 and 180',
+    //         'coordinates.latitude': 'Latitude must be between -90 and 90'
+    //       })
+    //   })
+    // }),
+    // businessHours: Joi.array().items(
+    //   Joi.object({
+    //     day: Joi.string()
+    //       .valid('Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday')
+    //       .required(),
+    //     open: Joi.string().pattern(/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/).allow(''),
+    //     close: Joi.string().pattern(/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/).allow(''),
+    //     isClosed: Joi.boolean().default(false)
+    //   })
+    // ).max(7),
     features: Joi.array().items(Joi.string().trim().max(100)).max(20),
     themeColor: Joi.object({
       primary: Joi.string().pattern(/^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$/).default('#007bff'),
@@ -387,10 +387,10 @@ exports.validateBusinessHours = (data) => {
       }
       return value;
     })
-    .messages({
-      'businessHours.openClose': 'Open and close times are required when not closed',
-      'businessHours.timeOrder': 'Open time must be before close time'
-    })
+      .messages({
+        'businessHours.openClose': 'Open and close times are required when not closed',
+        'businessHours.timeOrder': 'Open time must be before close time'
+      })
   ).max(7).unique('day');
 
   return schema.validate(data);
