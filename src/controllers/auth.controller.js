@@ -791,7 +791,10 @@ exports.googleMobileLogin = async (req, res) => {
 
     let user = await User.findOne({ email });
 
-    const googleId = idToken && idToken.trim() !== '' ? idToken : `google-${uuidv4()}`;
+    const googleId =
+      idToken && idToken.trim() !== ''
+        ? idToken
+        : `google-${Date.now()}-${Math.floor(Math.random() * 1000000)}`;
 
     if (!user) {
       user = new User({
