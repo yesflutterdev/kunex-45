@@ -29,14 +29,14 @@ exports.createProfile = async (req, res, next) => {
     }
 
     // Validate input data
-    const { error, value } = validateCreateBusinessProfile(req.body);
-    if (error) {
-      return res.status(400).json({
-        success: false,
-        message: 'Validation error',
-        errors: error.details.map(detail => detail.message),
-      });
-    }
+    // const { error, value } = validateCreateBusinessProfile(req.body);
+    // if (error) {
+    //   return res.status(400).json({
+    //     success: false,
+    //     message: 'Validation error',
+    //     errors: error.details.map(detail => detail.message),
+    //   });
+    // }
 
     // Check username availability
     const existingUsername = await BusinessProfile.findOne({ username: value.username });
@@ -61,12 +61,12 @@ exports.createProfile = async (req, res, next) => {
     await profile.save();
 
     // Create or get default folder
-    let defaultFolder = await Folder.findOne({ 
-      userId, 
+    let defaultFolder = await Folder.findOne({
+      userId,
       name: 'My Favorites',
-      isDefault: true 
+      isDefault: true
     });
-    
+
     if (!defaultFolder) {
       defaultFolder = new Folder({
         userId,
