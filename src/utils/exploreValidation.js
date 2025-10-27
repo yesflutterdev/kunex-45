@@ -105,7 +105,11 @@ exports.validateExploreBusinesses = (data) => {
     features: Joi.alternatives().try(
       Joi.string().trim().max(100),
       Joi.array().items(Joi.string().trim().max(100))
-    )
+    ),
+    // New search parameters
+    toprated: Joi.boolean().default(false),
+    opennow: Joi.boolean().default(false),
+    nearby: Joi.boolean().default(false)
   }).and('longitude', 'latitude'); // Both coordinates required if one is provided
 
   return schema.validate(data, { abortEarly: false });

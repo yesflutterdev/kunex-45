@@ -569,6 +569,27 @@ router.get('/on-the-rise', auth.authenticate, exploreController.getOnTheRise);
  *         explode: true
  *         description: Business features filter
  *         example: ["Outdoor seating", "Delivery"]
+ *       - in: query
+ *         name: toprated
+ *         schema:
+ *           type: boolean
+ *           default: false
+ *         description: Filter for top-rated businesses (4+ stars, 10+ reviews)
+ *         example: true
+ *       - in: query
+ *         name: opennow
+ *         schema:
+ *           type: boolean
+ *           default: false
+ *         description: Filter for businesses currently open
+ *         example: true
+ *       - in: query
+ *         name: nearby
+ *         schema:
+ *           type: boolean
+ *           default: false
+ *         description: Prioritize nearby businesses (requires coordinates, max 10km radius)
+ *         example: true
  *     responses:
  *       200:
  *         description: Businesses retrieved successfully
@@ -653,6 +674,7 @@ router.get('/on-the-rise', auth.authenticate, exploreController.getOnTheRise);
  *         description: Unauthorized
  */
 router.get('/businesses', auth.authenticate, exploreController.exploreBusinesses);
+
 
 /**
  * @swagger

@@ -228,25 +228,27 @@ const widgetSchema = new mongoose.Schema(
         default: {},
 
         // Custom Link fields
-        customLink: {
-          title: {
-            type: String,
-            default: ''
-          },
-          url: {
-            type: String,
-            default: ''
-          },
-          style: {
-            type: String,
-            enum: ['button', 'rectangular'],
-            default: 'rectangular'
-          },
-          imageUrl: {
-            type: String,
-            default: ''
+        customLink: [
+          {
+            title: {
+              type: String,
+              default: ''
+            },
+            url: {
+              type: String,
+              default: ''
+            },
+            style: {
+              type: String,
+              enum: ['button', 'rectangular'],
+              default: 'rectangular'
+            },
+            imageUrl: {
+              type: String,
+              default: ''
+            }
           }
-        },
+        ],
 
 
         // Media fields (Photo/Video)
@@ -318,7 +320,9 @@ const widgetSchema = new mongoose.Schema(
           title: { type: String, default: '' },
           date: { type: String, default: '' }, // 26 Oct 2024 format
           location: { type: String, default: '' },
-          ticketUrl: { type: String, default: '' }
+          ticketUrl: { type: String, default: '' },
+          enddate: { type: String, default: '' },
+          category: { type: String, default: '' }
         },
 
         // Drop Down Text fields

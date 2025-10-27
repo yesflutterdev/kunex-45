@@ -381,14 +381,31 @@ exports.exploreBusinesses = async (req, res, next) => {
       openedStatus,
       businessType,
       features,
-      search
+      search,
+      toprated = false,
+      opennow = false,
+      nearby = false
     } = value;
+
 
     // Build query
     const query = {};
 
-    // Add geo-query if coordinates provided
-    if (longitude && latitude) {
+    // Handle special search parameters
+    if (nearby && longitude && latitude) {
+      // Nearby search - prioritize distance with smaller radius
+      const nearbyRadius = Math.min(maxDistance, 10000);
+      query['location.coordinates'] = {
+        $near: {
+          $geometry: {
+            type: 'Point',
+            coordinates: [longitude, latitude]
+          },
+          $maxDistance: nearbyRadius
+        }
+      };
+    } else if (longitude && latitude) {
+      // Regular geo-query if coordinates provided
       query['location.coordinates'] = {
         $near: {
           $geometry: {
@@ -398,11 +415,44 @@ exports.exploreBusinesses = async (req, res, next) => {
           $maxDistance: maxDistance
         }
       };
+    } else if (nearby) {
     }
 
     // Text search
     if (search) {
       query.$text = { $search: search };
+    }
+
+    // Handle toprated search
+    if (toprated) {
+      query['metrics.ratingAverage'] = { $gte: 4.0 }; // Minimum 4-star rating
+      query['metrics.ratingCount'] = { $gte: 10 }; // At least 10 reviews
+    }
+
+    // Handle opennow search
+    if (opennow) {
+      const now = new Date();
+      const currentDay = now.toLocaleDateString('en-US', { weekday: 'long' });
+      const currentTime = now.toTimeString().slice(0, 5);
+      
+      
+      
+      const businessHoursQuery = {
+        $elemMatch: {
+          day: currentDay,
+          isClosed: false,
+          // Handle empty strings - if open/close are empty, business is closed
+          $and: [
+            { open: { $ne: "" } },
+            { close: { $ne: "" } },
+            { open: { $lte: currentTime } },
+            { close: { $gte: currentTime } }
+          ]
+        }
+      };
+      
+      
+      query.businessHours = businessHoursQuery;
     }
 
     // Apply filters
@@ -415,6 +465,7 @@ exports.exploreBusinesses = async (req, res, next) => {
     }
 
     if (rating) {
+      console.log(`⭐ RATING FILTER: ${rating}+ stars`);
       query['metrics.ratingAverage'] = { $gte: rating };
     }
 
@@ -444,14 +495,20 @@ exports.exploreBusinesses = async (req, res, next) => {
         $elemMatch: {
           day: currentDay,
           isClosed: false,
-          open: { $lte: currentTime },
-          close: { $gte: currentTime }
+          // Handle empty strings - if open/close are empty, business is closed
+          $and: [
+            { open: { $ne: "" } },
+            { close: { $ne: "" } },
+            { open: { $lte: currentTime } },
+            { close: { $gte: currentTime } }
+          ]
         }
       };
     }
 
     // Build sort object
     const sort = {};
+    
     switch (sortBy) {
       case 'rating':
         sort['metrics.ratingAverage'] = -1;
@@ -474,6 +531,14 @@ exports.exploreBusinesses = async (req, res, next) => {
       default:
         if (search) {
           sort.score = { $meta: 'textScore' };
+        } else if (toprated) {
+          sort['metrics.ratingAverage'] = -1;
+          sort['metrics.ratingCount'] = -1;
+        } else if (nearby) {
+          sort['metrics.ratingAverage'] = -1;
+        } else if (opennow) {
+          sort['metrics.ratingAverage'] = -1;
+          sort['metrics.viewCount'] = -1;
         } else {
           sort['metrics.ratingAverage'] = -1;
           sort['metrics.viewCount'] = -1;
@@ -484,7 +549,9 @@ exports.exploreBusinesses = async (req, res, next) => {
     // Calculate pagination
     const skip = (page - 1) * limit;
 
-    // Execute query
+
+    
+    
     const [businesses, totalCount] = await Promise.all([
       BusinessProfile.find(query)
         .populate('userId', 'firstName lastName')
@@ -496,8 +563,11 @@ exports.exploreBusinesses = async (req, res, next) => {
       BusinessProfile.countDocuments(query)
     ]);
 
+    console.log(`✅ QUERY RESULTS: Found ${businesses.length} businesses (Total: ${totalCount})`);
+
     // Add distance and additional info
-    const businessesWithDetails = businesses.map(business => {
+    console.log('🔧 Enhancing business data with distance and status...');
+    const businessesWithDetails = businesses.map((business, index) => {
       let distance = null;
       if (longitude && latitude && business.location?.coordinates?.coordinates) {
         distance = calculateDistance(
@@ -511,6 +581,7 @@ exports.exploreBusinesses = async (req, res, next) => {
 
       const isCurrentlyOpen = checkIfCurrentlyOpen(business.businessHours);
 
+
       return {
         ...business,
         distance,
@@ -523,6 +594,7 @@ exports.exploreBusinesses = async (req, res, next) => {
     const totalPages = Math.ceil(totalCount / limit);
     const hasNextPage = page < totalPages;
     const hasPrevPage = page > 1;
+
 
     res.status(200).json({
       success: true,
@@ -544,7 +616,10 @@ exports.exploreBusinesses = async (req, res, next) => {
           openedStatus,
           businessType,
           features,
-          search
+          search,
+          toprated,
+          opennow,
+          nearby
         },
         sortedBy: sortBy
       },
@@ -554,13 +629,13 @@ exports.exploreBusinesses = async (req, res, next) => {
   }
 };
 
+
 // Get recent searches for user
 exports.getRecentSearches = async (req, res, next) => {
   try {
     const userId = req.user.id;
     const { limit = 10 } = req.query;
 
-    // This would typically come from a user searches collection
     // For now, we'll return a mock response
     const recentSearches = [
       {
