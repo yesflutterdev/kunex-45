@@ -35,7 +35,7 @@ const businessProfileSchema = new mongoose.Schema(
       type: String,
       enum: [
         'Small business',
-        'Medium sized business', 
+        'Medium sized business',
         'Franchise',
         'Corporation',
         'Non profit organizations',
@@ -43,7 +43,7 @@ const businessProfileSchema = new mongoose.Schema(
         'Online business',
         'Others'
       ],
-      required: true
+      // required: true
     },
     subBusinessType: {
       type: String,
@@ -65,7 +65,7 @@ const businessProfileSchema = new mongoose.Schema(
     },
     industry: {
       type: String,
-      required: true,
+      // required: true,
       trim: true,
       maxlength: 100
     },
@@ -152,10 +152,10 @@ const businessProfileSchema = new mongoose.Schema(
         coordinates: {
           type: [Number], // [longitude, latitude]
           validate: {
-            validator: function(v) {
-              return v.length === 2 && 
-                     v[0] >= -180 && v[0] <= 180 && // longitude
-                     v[1] >= -90 && v[1] <= 90;     // latitude
+            validator: function (v) {
+              return v.length === 2 &&
+                v[0] >= -180 && v[0] <= 180 && // longitude
+                v[1] >= -90 && v[1] <= 90;     // latitude
             },
             message: 'Coordinates must be [longitude, latitude] with valid ranges'
           }
@@ -166,7 +166,7 @@ const businessProfileSchema = new mongoose.Schema(
       day: {
         type: String,
         enum: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'],
-        required: true
+        // required: true
       },
       open: {
         type: String,
@@ -341,9 +341,9 @@ businessProfileSchema.index({ 'location.city': 1 });
 businessProfileSchema.index({ 'location.country': 1 });
 
 // Create text index for search functionality
-businessProfileSchema.index({ 
-  businessName: 'text', 
-  'description.short': 'text', 
+businessProfileSchema.index({
+  businessName: 'text',
+  'description.short': 'text',
   'description.full': 'text',
   industry: 'text',
   subIndustry: 'text',
@@ -351,10 +351,10 @@ businessProfileSchema.index({
 });
 
 // Method to calculate completion percentage
-businessProfileSchema.methods.calculateCompletionPercentage = function() {
+businessProfileSchema.methods.calculateCompletionPercentage = function () {
   const requiredFields = [
     'businessName',
-    'username', 
+    'username',
     'businessType',
     'industry',
     'description.short',
@@ -395,29 +395,29 @@ businessProfileSchema.methods.calculateCompletionPercentage = function() {
 
   const requiredPercentage = (completedRequired / requiredFields.length) * 70;
   const optionalPercentage = (completedOptional / optionalFields.length) * 30;
-  
+
   const totalPercentage = Math.round(requiredPercentage + optionalPercentage);
-  
+
   // Update the completion percentage
   this.completionPercentage = totalPercentage;
-  
+
   return totalPercentage;
 };
 
 // Method to increment view count
-businessProfileSchema.methods.incrementViewCount = function() {
+businessProfileSchema.methods.incrementViewCount = function () {
   this.metrics.viewCount += 1;
   return this.save();
 };
 
 // Method to increment favorite count
-businessProfileSchema.methods.incrementFavoriteCount = function() {
+businessProfileSchema.methods.incrementFavoriteCount = function () {
   this.metrics.favoriteCount += 1;
   return this.save();
 };
 
 // Method to update rating
-businessProfileSchema.methods.updateRating = function(newRating) {
+businessProfileSchema.methods.updateRating = function (newRating) {
   const currentTotal = this.metrics.ratingAverage * this.metrics.ratingCount;
   this.metrics.ratingCount += 1;
   this.metrics.ratingAverage = (currentTotal + newRating) / this.metrics.ratingCount;
@@ -425,7 +425,7 @@ businessProfileSchema.methods.updateRating = function(newRating) {
 };
 
 // Pre-save hook to calculate completion percentage
-businessProfileSchema.pre('save', function(next) {
+businessProfileSchema.pre('save', function (next) {
   if (this.isModified() && !this.isNew) {
     this.calculateCompletionPercentage();
   }
@@ -433,23 +433,23 @@ businessProfileSchema.pre('save', function(next) {
 });
 
 // Virtual for getting business hours for a specific day
-businessProfileSchema.virtual('todayHours').get(function() {
+businessProfileSchema.virtual('todayHours').get(function () {
   const today = new Date().toLocaleDateString('en-US', { weekday: 'long' });
   return this.businessHours.find(hours => hours.day === today);
 });
 
 // Virtual for checking if business is currently open
-businessProfileSchema.virtual('isCurrentlyOpen').get(function() {
+businessProfileSchema.virtual('isCurrentlyOpen').get(function () {
   const now = new Date();
   const today = now.toLocaleDateString('en-US', { weekday: 'long' });
   const currentTime = now.toTimeString().slice(0, 5); // HH:MM format
-  
+
   const todayHours = this.businessHours.find(hours => hours.day === today);
-  
+
   if (!todayHours || todayHours.isClosed) {
     return false;
   }
-  
+
   return currentTime >= todayHours.open && currentTime <= todayHours.close;
 });
 
