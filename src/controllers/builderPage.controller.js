@@ -271,10 +271,12 @@ exports.updatePage = async (req, res, next) => {
       const syncData = {};
       
       // Map builder page fields to business profile fields
-      if (updateData.title) syncData.businessName = updateData.title;
-      if (updateData.username) syncData.username = updateData.username;
-      if (updateData.logo) syncData.logo = updateData.logo;
-      if (updateData.priceRange) syncData.priceRange = updateData.priceRange;
+      if (updateData.title !== undefined) syncData.businessName = updateData.title;
+      if (updateData.username !== undefined) syncData.username = updateData.username;
+      if (updateData.logo !== undefined) syncData.logo = updateData.logo;
+      if (updateData.cover !== undefined) syncData.coverImage = updateData.cover;
+      if (updateData.priceRange !== undefined) syncData.priceRange = updateData.priceRange;
+      if (updateData.folderId !== undefined) syncData.folderId = updateData.folderId;
       if (updateData.location) {
         // Convert location string to object
         syncData.location = {
@@ -294,6 +296,32 @@ exports.updatePage = async (req, res, next) => {
       
       // Update business profile if there are changes
       if (Object.keys(syncData).length > 0) {
+        // Check if business profile exists
+        const existingProfile = await BusinessProfile.findById(page.businessId);
+        if (!existingProfile) {
+          // Find the correct business profile for this user
+          const userProfiles = await BusinessProfile.find({ userId }).select('_id businessName username');
+          
+          // If there's a business profile for this user, link the builder page to it
+          if (userProfiles.length > 0) {
+            const correctProfile = userProfiles[0];
+            
+            // Update the builder page's businessId
+            page.businessId = correctProfile._id;
+            await page.save();
+            
+            // Sync to the correct profile
+            await BusinessProfile.findByIdAndUpdate(
+              correctProfile._id,
+              { $set: syncData },
+              { new: true }
+            );
+          }
+          
+          return;
+        }
+        
+        // Sync to existing profile
         await BusinessProfile.findByIdAndUpdate(
           page.businessId,
           { $set: syncData },

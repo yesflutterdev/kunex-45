@@ -27,6 +27,8 @@ exports.validateCreateBusinessProfile = (data) => {
       )
       .required(),
     subBusinessType: Joi.string().trim().max(100).allow(''),
+    logo: Joi.string().uri().trim().allow('', null),
+    coverImage: Joi.string().uri().trim().allow('', null),
     professionType: Joi.string()
       .valid(
         'Freelancer',
@@ -51,34 +53,6 @@ exports.validateCreateBusinessProfile = (data) => {
       email: Joi.string().email().trim().lowercase().allow(''),
       phone: Joi.string().trim().max(20).allow(''),
       website: Joi.string().uri().trim().allow('')
-    }),
-    location: Joi.object({
-      isOnlineOnly: Joi.boolean().default(false),
-      address: Joi.string().trim().max(200).allow(''),
-      city: Joi.string().trim().max(100).allow(''),
-      state: Joi.string().trim().max(100).allow(''),
-      country: Joi.string().trim().max(100).allow(''),
-      postalCode: Joi.string().trim().max(20).allow(''),
-      coordinates: Joi.object({
-        type: Joi.string().valid('Point').default('Point'),
-        coordinates: Joi.array()
-          .items(Joi.number())
-          .length(2)
-          .custom((value, helpers) => {
-            const [longitude, latitude] = value;
-            if (longitude < -180 || longitude > 180) {
-              return helpers.error('coordinates.longitude');
-            }
-            if (latitude < -90 || latitude > 90) {
-              return helpers.error('coordinates.latitude');
-            }
-            return value;
-          })
-          .messages({
-            'coordinates.longitude': 'Longitude must be between -180 and 180',
-            'coordinates.latitude': 'Latitude must be between -90 and 90'
-          })
-      })
     }),
     businessHours: Joi.array().items(
       Joi.object({

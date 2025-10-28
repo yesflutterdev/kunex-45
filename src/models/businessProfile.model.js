@@ -28,9 +28,10 @@ const businessProfileSchema = new mongoose.Schema(
       type: String, // URL to logo
       default: null
     },
-    coverImages: [{
-      type: String // URLs to cover images
-    }],
+    coverImage: {
+      type: String, // URL to cover image
+      default: null
+    },
     businessType: {
       type: String,
       enum: [
@@ -151,6 +152,7 @@ const businessProfileSchema = new mongoose.Schema(
         },
         coordinates: {
           type: [Number], // [longitude, latitude]
+          default: [0, 0], // Default to [0, 0] if not provided
           validate: {
             validator: function (v) {
               return v.length === 2 &&

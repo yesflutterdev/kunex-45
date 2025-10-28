@@ -52,6 +52,10 @@ exports.createProfile = async (req, res, next) => {
       userId,
       ...value,
     };
+    
+    // Ensure logo and coverImage are passed through
+    if (value.logo) profileData.logo = value.logo;
+    if (value.coverImage) profileData.coverImage = value.coverImage;
 
     const profile = new BusinessProfile(profileData);
 
@@ -77,29 +81,50 @@ exports.createProfile = async (req, res, next) => {
       await defaultFolder.save();
     }
 
-    // Create corresponding builder page
-    const builderPageData = {
-      userId,
-      businessId: profile._id,
-      folderId: defaultFolder._id,
-      title: value.businessName || 'Untitled Page',
-      slug: value.username || `page-${Date.now()}`,
-      description: value.description?.short || '',
-      priceRange: value.priceRange || '$',
-      location: value.location?.address || '',
-      logo: value.logo || '',
-      username: value.username || '',
-      pageType: 'landing', // Default to landing page
-      template: {
-        name: 'Business Landing Page',
-        category: 'business', // Map businessType to template category
-        version: '1.0'
-      },
-      isPublished: true
-    };
+    // Create or update corresponding builder page
+    const slug = value.username || `page-${Date.now()}`;
+    
+    // Check if builder page already exists
+    let builderPage = await BuilderPage.findOne({ userId, slug });
+    
+    if (builderPage) {
+      // Update existing page
+      builderPage.businessId = profile._id;
+      builderPage.folderId = defaultFolder._id;
+      builderPage.title = value.businessName || builderPage.title;
+      builderPage.description = value.description?.short || builderPage.description;
+      builderPage.priceRange = value.priceRange || builderPage.priceRange;
+      builderPage.location = value.location?.address || builderPage.location;
+      builderPage.logo = value.logo || builderPage.logo;
+      builderPage.username = value.username || builderPage.username;
+      builderPage.cover = value.coverImage || builderPage.cover;
+      await builderPage.save();
+    } else {
+      // Create new builder page
+      const builderPageData = {
+        userId,
+        businessId: profile._id,
+        folderId: defaultFolder._id,
+        title: value.businessName || 'Untitled Page',
+        slug: slug,
+        description: value.description?.short || '',
+        priceRange: value.priceRange || '$',
+        location: value.location?.address || '',
+        logo: value.logo || '',
+        username: value.username || '',
+        cover: value.coverImage || '',
+        pageType: 'landing', // Default to landing page
+        template: {
+          name: 'Business Landing Page',
+          category: 'business', // Map businessType to template category
+          version: '1.0'
+        },
+        isPublished: true
+      };
 
-    const builderPage = new BuilderPage(builderPageData);
-    await builderPage.save();
+      builderPage = new BuilderPage(builderPageData);
+      await builderPage.save();
+    }
 
     // Update profile with folderId
     profile.folderId = defaultFolder._id;
@@ -233,6 +258,28 @@ exports.updateProfile = async (req, res, next) => {
     // Update profile
     Object.assign(profile, value);
     await profile.save();
+
+    // Sync to BuilderPage if profile has _id
+    const builderPage = await BuilderPage.findOne({ businessId: profile._id });
+    if (builderPage) {
+      const syncData = {};
+      
+      // Always sync all relevant fields to keep them in sync
+      syncData.title = profile.businessName;
+      syncData.username = profile.username;
+      syncData.logo = profile.logo;
+      syncData.cover = profile.coverImage;
+      syncData.priceRange = profile.priceRange;
+      syncData.folderId = profile.folderId;
+      
+      if (profile.location?.address) {
+        syncData.location = profile.location.address;
+      }
+      
+      // Update builder page
+      Object.assign(builderPage, syncData);
+      await builderPage.save();
+    }
 
     // Populate user data
     await profile.populate('userId', 'email firstName lastName');
