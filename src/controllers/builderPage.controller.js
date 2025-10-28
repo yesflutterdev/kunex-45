@@ -269,7 +269,7 @@ exports.updatePage = async (req, res, next) => {
     // Sync data with BusinessProfile if businessId exists
     if (page.businessId) {
       const syncData = {};
-      
+
       // Map builder page fields to business profile fields
       if (updateData.title !== undefined) syncData.businessName = updateData.title;
       if (updateData.username !== undefined) syncData.username = updateData.username;
@@ -293,7 +293,7 @@ exports.updatePage = async (req, res, next) => {
       }
       // Note: pageType in BuilderPage is different from businessType in BusinessProfile
       // We don't sync pageType to businessType as they serve different purposes
-      
+
       // Update business profile if there are changes
       if (Object.keys(syncData).length > 0) {
         // Check if business profile exists
@@ -301,15 +301,15 @@ exports.updatePage = async (req, res, next) => {
         if (!existingProfile) {
           // Find the correct business profile for this user
           const userProfiles = await BusinessProfile.find({ userId }).select('_id businessName username');
-          
+
           // If there's a business profile for this user, link the builder page to it
           if (userProfiles.length > 0) {
             const correctProfile = userProfiles[0];
-            
+
             // Update the builder page's businessId
             page.businessId = correctProfile._id;
             await page.save();
-            
+
             // Sync to the correct profile
             await BusinessProfile.findByIdAndUpdate(
               correctProfile._id,
@@ -317,10 +317,10 @@ exports.updatePage = async (req, res, next) => {
               { new: true }
             );
           }
-          
+
           return;
         }
-        
+
         // Sync to existing profile
         await BusinessProfile.findByIdAndUpdate(
           page.businessId,
@@ -571,7 +571,7 @@ exports.getPageAnalytics = async (req, res, next) => {
     // Calculate date range
     const now = new Date();
     let startDate;
-    
+
     switch (period) {
       case '7d':
         startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
@@ -773,7 +773,7 @@ exports.updateSocialLinks = async (req, res, next) => {
 
     // Validate social links
     const validPlatforms = ['facebook', 'twitter', 'linkedin', 'instagram', 'youtube', 'tiktok', 'pinterest', 'snapchat', 'whatsapp', 'telegram', 'discord', 'reddit', 'github', 'website', 'blog', 'other'];
-    
+
     for (const link of socialLinks) {
       if (!link.platform || !link.url) {
         return res.status(400).json({
@@ -959,7 +959,7 @@ exports.getPageFormData = async (req, res, next) => {
 
     submissions.forEach(submission => {
       const widgetId = submission.widgetId._id.toString();
-      
+
       if (!groupedSubmissions[widgetId]) {
         groupedSubmissions[widgetId] = {
           formId: `form${formCounter}`,
@@ -974,7 +974,7 @@ exports.getPageFormData = async (req, res, next) => {
         };
         formCounter++;
       }
-      
+
       // Add form data to the group
       groupedSubmissions[widgetId].submissions.push({
         submissionId: `sub_${groupedSubmissions[widgetId].submissions.length + 1}`,
@@ -1047,7 +1047,7 @@ exports.updateWeeklyHours = async (req, res, next) => {
   try {
     const userId = req.user.id;
     const { pageId } = req.params;
-    const { weeklyHours, timezone, notes } = req.body;
+    const { weeklyHours, timezone, notes, sameForAll, commonHours } = req.body;
 
     const page = await BuilderPage.findOne({ _id: pageId, userId });
     if (!page) {
@@ -1057,7 +1057,6 @@ exports.updateWeeklyHours = async (req, res, next) => {
       });
     }
 
-    // Validate weekly hours data
     if (!weeklyHours || !Array.isArray(weeklyHours)) {
       return res.status(400).json({
         success: false,
@@ -1065,7 +1064,6 @@ exports.updateWeeklyHours = async (req, res, next) => {
       });
     }
 
-    // Validate each day's hours
     const validDays = ['Mon', 'Tues', 'Wed', 'Thur', 'Fri', 'Sat', 'Sun'];
     for (const dayHours of weeklyHours) {
       if (!validDays.includes(dayHours.day)) {
@@ -1074,7 +1072,7 @@ exports.updateWeeklyHours = async (req, res, next) => {
           message: `Invalid day: ${dayHours.day}`
         });
       }
-      
+
       if (!dayHours.isClosed && (!dayHours.startTime || !dayHours.endTime)) {
         return res.status(400).json({
           success: false,
@@ -1083,19 +1081,49 @@ exports.updateWeeklyHours = async (req, res, next) => {
       }
     }
 
-    // Update service hours
+    if (sameForAll) {
+      if (!commonHours || !commonHours.startTime || !commonHours.endTime) {
+        return res.status(400).json({
+          success: false,
+          message: 'Common hours with startTime and endTime are required when sameForAll is true'
+        });
+      }
+
+      const timeRegex = /^([01]?[0-9]|2[0-3]):[0-5][0-9]$/;
+      if (!timeRegex.test(commonHours.startTime) || !timeRegex.test(commonHours.endTime)) {
+        return res.status(400).json({
+          success: false,
+          message: 'Common hours must be in HH:MM format'
+        });
+      }
+    }
+
     page.serviceHours.weeklyHours = weeklyHours;
+    page.serviceHours.sameForAll = sameForAll || false;
+
+    if (sameForAll && commonHours) {
+      page.serviceHours.commonHours = {
+        startTime: commonHours.startTime,
+        endTime: commonHours.endTime
+      };
+    } else {
+      page.serviceHours.commonHours = {
+        startTime: '',
+        endTime: ''
+      };
+    }
+
     if (timezone) page.serviceHours.timezone = timezone;
     if (notes) page.serviceHours.notes = notes;
-    
-    await page.setWeeklyHours(weeklyHours);
+
+    await page.save();
 
     res.status(200).json({
       success: true,
       message: 'Weekly hours updated successfully',
       data: {
         serviceHours: page.serviceHours,
-        currentHours: page.getCurrentHours()
+        currentHours: page.getCurrentHours ? page.getCurrentHours() : {} // Added fallback
       }
     });
   } catch (error) {
