@@ -32,7 +32,7 @@ const widgetSchema = new mongoose.Schema(
         'custom_html', 'api_data', 'weather', 'clock', 'calculator',
         'custom_link', 'media', 'promotions', 'products', 'event', 'dropdown',
         'app_integration', 'google_reviews', 'google_maps', 'reservations',
-        'music_podcast', 'social_media_widgets'
+        'music_podcast', 'social_media_widgets', 'pdf'
       ],
       required: true
     },
@@ -240,7 +240,7 @@ const widgetSchema = new mongoose.Schema(
 
         // Media fields (Photo/Video)
         media: {
-          mediaType: { type: String, enum: ['photo', 'video'], default: 'photo' },
+          mediaType: { type: String, enum: ['photo', 'video', 'pdf'], default: 'photo' },
           photoType: { type: String, enum: ['carousel', 'grid'], default: 'carousel' },
           videoType: { type: String, enum: ['youtube', 'upload'], default: 'youtube' },
 
@@ -266,7 +266,14 @@ const widgetSchema = new mongoose.Schema(
             videoUrl: { type: String, default: '' },
             videoTitle: { type: String, default: '' },
             thumbnailUrl: { type: String, default: '' }
-          }
+          },
+
+          pdfs: [
+            {
+              title: { type: String, default: '' },
+              pdfFile: { type: String, default: '' },
+            },
+          ],
         },
 
         // Form fields
