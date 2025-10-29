@@ -8,14 +8,14 @@ const daySchema = new mongoose.Schema({
   },
   startTime: {
     type: String,
-    required: function() {
+    required: function () {
       return !this.isClosed;
     },
     default: ''
   },
   endTime: {
     type: String,
-    required: function() {
+    required: function () {
       return !this.isClosed;
     },
     default: ''
@@ -370,6 +370,86 @@ const builderPageSchema = new mongoose.Schema(
       }
     }],
     // Call to action button configuration
+    // callToAction: {
+    //   enabled: {
+    //     type: Boolean,
+    //     default: false
+    //   },
+    //   button: {
+    //     text: {
+    //       type: String,
+    //       trim: true,
+    //       maxlength: 50,
+    //       default: 'Get Started'
+    //     },
+    //     bgColor: {
+    //       type: String,
+    //       match: /^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$/,
+    //       default: '#007bff'
+    //     },
+    //     textColor: {
+    //       type: String,
+    //       match: /^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$/,
+    //       default: '#ffffff'
+    //     },
+    //     radius: {
+    //       type: Number,
+    //       min: 0,
+    //       max: 50,
+    //       default: 8
+    //     },
+    //     action: {
+    //       type: String,
+    //       enum: ['make_call', 'send_email', 'open_url', 'download_file', 'book_appointment', 'make_purchase', 'subscribe_newsletter', 'contact_form', 'social_media', 'custom'],
+    //       default: 'open_url'
+    //     },
+    //     actionData: {
+    //       phoneNumber: String,
+    //       emailAddress: String,
+    //       url: String,
+    //       fileUrl: String,
+    //       appointmentUrl: String,
+    //       productId: String,
+    //       newsletterId: String,
+    //       formId: String,
+    //       socialPlatform: String,
+    //       customAction: String
+    //     },
+    //     size: {
+    //       width: {
+    //         type: Number,
+    //         min: 100,
+    //         max: 400,
+    //         default: 200
+    //       },
+    //       height: {
+    //         type: Number,
+    //         min: 40,
+    //         max: 80,
+    //         default: 50
+    //       }
+    //     },
+    //     position: {
+    //       type: String,
+    //       enum: ['top-left', 'top-center', 'top-right', 'middle-left', 'middle-center', 'middle-right', 'bottom-left', 'bottom-center', 'bottom-right', 'floating'],
+    //       default: 'bottom-center'
+    //     },
+    //     isFloating: {
+    //       type: Boolean,
+    //       default: false
+    //     },
+    //     showOnScroll: {
+    //       type: Boolean,
+    //       default: false
+    //     },
+    //     scrollThreshold: {
+    //       type: Number,
+    //       min: 0,
+    //       max: 100,
+    //       default: 50
+    //     }
+    //   }
+    // },
     callToAction: {
       enabled: {
         type: Boolean,
@@ -400,20 +480,160 @@ const builderPageSchema = new mongoose.Schema(
         },
         action: {
           type: String,
-          enum: ['make_call', 'send_email', 'open_url', 'download_file', 'book_appointment', 'make_purchase', 'subscribe_newsletter', 'contact_form', 'social_media', 'custom'],
+          enum: [
+            'make_call',
+            'send_email',
+            'open_url',
+            'download_file',
+            'book_appointment',
+            'make_purchase',
+            'subscribe_newsletter',
+            'contact_form',
+            'social_media',
+            'custom',
+            'chat_whatsapp',
+            'share_vcard'
+          ],
           default: 'open_url'
         },
         actionData: {
-          phoneNumber: String,
-          emailAddress: String,
-          url: String,
-          fileUrl: String,
-          appointmentUrl: String,
-          productId: String,
-          newsletterId: String,
-          formId: String,
-          socialPlatform: String,
-          customAction: String
+
+          url: {
+            type: String,
+            default: ''
+          },
+
+          emailData: {
+            title: {
+              type: String,
+              default: ''
+            },
+            emailAddress: {
+              type: String,
+              default: ''
+            }
+          },
+
+          callData: {
+            title: {
+              type: String,
+              default: ''
+            },
+            phoneNumber: {
+              type: String,
+              default: ''
+            }
+          },
+
+          customUrlData: {
+            title: {
+              type: String,
+              default: ''
+            },
+            url: {
+              type: String,
+              default: ''
+            }
+          },
+
+          whatsappData: {
+            phoneNumber: {
+              type: String,
+              default: ''
+            },
+            prefillMessage: {
+              type: String,
+              default: ''
+            }
+          },
+
+          vcardData: {
+            image: {
+              type: String,
+              default: ''
+            },
+            prefix: {
+              type: String,
+              default: ''
+            },
+            firstName: {
+              type: String,
+              default: ''
+            },
+            lastName: {
+              type: String,
+              default: ''
+            },
+            company: {
+              type: String,
+              default: ''
+            },
+            workPhone: {
+              type: String,
+              default: ''
+            },
+            email: {
+              type: String,
+              default: ''
+            },
+            address: {
+              type: String,
+              default: ''
+            },
+            city: {
+              type: String,
+              default: ''
+            },
+            state: {
+              type: String,
+              default: ''
+            },
+            zipCode: {
+              type: String,
+              default: ''
+            },
+            country: {
+              type: String,
+              default: ''
+            }
+          },
+
+          phoneNumber: {
+            type: String,
+            default: ''
+          },
+          emailAddress: {
+            type: String,
+            default: ''
+          },
+          fileUrl: {
+            type: String,
+            default: ''
+          },
+          appointmentUrl: {
+            type: String,
+            default: ''
+          },
+          productId: {
+            type: String,
+            default: ''
+          },
+          newsletterId: {
+            type: String,
+            default: ''
+          },
+          formId: {
+            type: String,
+            default: ''
+          },
+          socialPlatform: {
+            type: String,
+            default: ''
+          },
+          customAction: {
+            type: String,
+            default: ''
+          }
         },
         size: {
           width: {
@@ -620,13 +840,13 @@ builderPageSchema.methods.addEventDate = function (eventData) {
     this.serviceHours.eventDates = [];
   }
   this.serviceHours.eventDates.push(eventData);
-  
+
   if (this.serviceHours.type === 'weekly') {
     this.serviceHours.type = 'both';
   } else if (this.serviceHours.type !== 'both') {
     this.serviceHours.type = 'event-dates';
   }
-  
+
   return this.save();
 };
 
@@ -634,14 +854,14 @@ builderPageSchema.methods.removeEventDate = function (eventId) {
   this.serviceHours.eventDates = this.serviceHours.eventDates.filter(
     event => event._id.toString() !== eventId
   );
-  
+
   // Update type if no more event dates
   if (this.serviceHours.eventDates.length === 0 && this.serviceHours.type === 'both') {
     this.serviceHours.type = 'weekly';
   } else if (this.serviceHours.eventDates.length === 0 && this.serviceHours.type === 'event-dates') {
     this.serviceHours.type = 'weekly';
   }
-  
+
   return this.save();
 };
 
@@ -650,7 +870,7 @@ builderPageSchema.methods.updateEventDate = function (eventId, updateData) {
   if (!event) {
     throw new Error('Event not found');
   }
-  
+
   Object.assign(event, updateData);
   return this.save();
 };
@@ -659,13 +879,13 @@ builderPageSchema.methods.getCurrentHours = function () {
   const now = new Date();
   const currentDay = now.toLocaleDateString('en-US', { weekday: 'short' });
   const currentTime = now.toTimeString().slice(0, 5);
-  
+
   // Check weekly hours first
   if (this.serviceHours.type === 'weekly' || this.serviceHours.type === 'both') {
     const todayHours = this.serviceHours.weeklyHours.find(
       hours => hours.day === currentDay
     );
-    
+
     if (todayHours && !todayHours.isClosed) {
       return {
         isOpen: currentTime >= todayHours.startTime && currentTime <= todayHours.endTime,
@@ -675,19 +895,19 @@ builderPageSchema.methods.getCurrentHours = function () {
       };
     }
   }
-  
+
   // Check event dates
   if (this.serviceHours.type === 'event-dates' || this.serviceHours.type === 'both') {
     const todayEvents = this.serviceHours.eventDates.filter(event => {
       const eventDate = new Date(event.eventDate);
       return eventDate.toDateString() === now.toDateString();
     });
-    
+
     if (todayEvents.length > 0) {
-      const currentEvent = todayEvents.find(event => 
+      const currentEvent = todayEvents.find(event =>
         currentTime >= event.startTime && currentTime <= event.endTime
       );
-      
+
       if (currentEvent) {
         return {
           isOpen: true,
@@ -699,7 +919,7 @@ builderPageSchema.methods.getCurrentHours = function () {
       }
     }
   }
-  
+
   return {
     isOpen: false,
     type: 'closed'
