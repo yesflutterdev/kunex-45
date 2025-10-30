@@ -537,6 +537,10 @@ const builderPageSchema = new mongoose.Schema(
           },
 
           whatsappData: {
+            title: {
+              type: String,
+              default: ''
+            },
             phoneNumber: {
               type: String,
               default: ''
@@ -548,6 +552,10 @@ const builderPageSchema = new mongoose.Schema(
           },
 
           vcardData: {
+            title: {
+              type: String,
+              default: ''
+            },
             image: {
               type: String,
               default: ''
