@@ -295,6 +295,11 @@ const businessProfileSchema = new mongoose.Schema(
       ref: 'Folder',
       default: null
     },
+    builderPageId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'BuilderPage',
+      default: null
+    },
     metrics: {
       viewCount: {
         type: Number,

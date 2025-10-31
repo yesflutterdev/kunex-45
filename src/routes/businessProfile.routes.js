@@ -886,6 +886,9 @@ router.delete('/cover-images', authenticate, isVerified, businessProfileControll
  */
 router.get('/search', businessProfileController.searchProfiles);
 
+// Get business profiles by allowed industry via URL param (public)
+router.get('/industry/:industry', businessProfileController.getProfilesByIndustryParam);
+
 /**
  * @swagger
  * /api/profile/business/nearby:

@@ -93,6 +93,7 @@ exports.createProfile = async (req, res, next) => {
       builderPage.folderId = defaultFolder._id;
       builderPage.title = value.businessName || builderPage.title;
       builderPage.description = value.description?.short || builderPage.description;
+      builderPage.industry = value.industry || builderPage.industry;
       builderPage.priceRange = value.priceRange || builderPage.priceRange;
       builderPage.location = value.location?.address || builderPage.location;
       builderPage.logo = value.logo || builderPage.logo;
@@ -108,6 +109,7 @@ exports.createProfile = async (req, res, next) => {
         title: value.businessName || 'Untitled Page',
         slug: slug,
         description: value.description?.short || '',
+        industry: value.industry || '',
         priceRange: value.priceRange || '$',
         location: value.location?.address || '',
         logo: value.logo || '',
@@ -128,6 +130,8 @@ exports.createProfile = async (req, res, next) => {
 
     // Update profile with folderId
     profile.folderId = defaultFolder._id;
+    // Link created/updated builder page to business profile
+    profile.builderPageId = builderPage._id;
     await profile.save();
 
     // Populate user data
@@ -270,6 +274,7 @@ exports.updateProfile = async (req, res, next) => {
       syncData.logo = profile.logo;
       syncData.cover = profile.coverImage;
       syncData.priceRange = profile.priceRange;
+      syncData.industry = profile.industry;
       syncData.folderId = profile.folderId;
       
       if (profile.location?.address) {
@@ -291,6 +296,52 @@ exports.updateProfile = async (req, res, next) => {
         profile,
         completionPercentage: profile.completionPercentage,
       },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// Get business profiles by allowed industry via URL param
+exports.getProfilesByIndustryParam = async (req, res, next) => {
+  try {
+    const allowedIndustries = [
+      'Restaurant',
+      'Photography & Videography',
+      'Pet Grooming',
+      'Hair Salon',
+      'Business man'
+    ];
+
+    const { industry } = req.params;
+    if (!industry || typeof industry !== 'string') {
+      return res.status(400).json({
+        success: false,
+        message: 'Industry parameter is required'
+      });
+    }
+
+    const matchIndustry = allowedIndustries.find(i => i.toLowerCase() === industry.toLowerCase());
+    if (!matchIndustry) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid industry. Allowed industries are: Restaurant, Photography & Videography, Pet Grooming, Hair Salon, Business man'
+      });
+    }
+
+    // Case-insensitive match against stored industry
+    const escaped = matchIndustry.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const profiles = await BusinessProfile.find({ industry: { $regex: `^${escaped}$`, $options: 'i' } })
+      .select(
+        '_id userId businessName username logo coverImage industry priceRange location.city location.state location.country completionPercentage builderPageId folderId createdAt updatedAt'
+      )
+      .populate('userId', 'firstName lastName')
+      .sort({ updatedAt: -1 })
+      .lean();
+
+    res.status(200).json({
+      success: true,
+      data: { profiles }
     });
   } catch (error) {
     next(error);

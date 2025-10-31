@@ -100,6 +100,11 @@ const builderPageSchema = new mongoose.Schema(
       trim: true,
       maxlength: 140
     },
+    industry: {
+      type: String,
+      trim: true,
+      maxlength: 100
+    },
     priceRange: {
       type: String,
       trim: true,
