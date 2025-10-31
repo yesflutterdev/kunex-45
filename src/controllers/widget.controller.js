@@ -82,7 +82,6 @@ exports.createWidget = async (req, res, next) => {
 // Get widgets
 exports.getWidgets = async (req, res, next) => {
   try {
-    const userId = req.user.id;
     const {
       pageId,
       type,
@@ -96,7 +95,7 @@ exports.getWidgets = async (req, res, next) => {
     } = req.query;
 
     // Build query
-    const query = { userId };
+    const query = {};
     if (pageId) query.pageId = pageId;
     if (type) query.type = type;
     if (category) query.category = category;

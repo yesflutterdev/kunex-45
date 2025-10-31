@@ -72,7 +72,6 @@ exports.createPage = async (req, res, next) => {
 // Get all pages for authenticated user
 exports.getPages = async (req, res, next) => {
   try {
-    const userId = req.user.id;
     const {
       businessId,
       pageType,
@@ -85,7 +84,7 @@ exports.getPages = async (req, res, next) => {
     } = req.query;
 
     // Build query
-    const query = { userId };
+    const query = {};
 
     if (businessId) {
       query.businessId = businessId;
