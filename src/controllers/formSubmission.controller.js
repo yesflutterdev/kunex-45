@@ -28,11 +28,11 @@ exports.submitForm = async (req, res, next) => {
     }
 
     // Verify page exists and is published
-    const page = await BuilderPage.findOne({ 
-      _id: pageId, 
-      'settings.isPublished': true 
+    const page = await BuilderPage.findOne({
+      _id: pageId,
+      // 'settings.isPublished': true 
     });
-    
+
     if (!page) {
       return res.status(404).json({
         success: false,
@@ -40,15 +40,15 @@ exports.submitForm = async (req, res, next) => {
       });
     }
     // Verify widget exists and is a form type
-    const widget = await Widget.findOne({ 
-      _id: widgetId, 
+    const widget = await Widget.findOne({
+      _id: widgetId,
       pageId: pageId,
       type: 'form',
       status: 'active',
       isVisible: true
     });
-    console.log("widgetId",widgetId);
-console.log("widget reached",widget);
+    console.log("widgetId", widgetId);
+    console.log("widget reached", widget);
     if (!widget) {
       return res.status(404).json({
         success: false,
@@ -59,7 +59,7 @@ console.log("widget reached",widget);
     // Extract form fields configuration from widget and transform to array format
     const formConfig = widget.settings.specific?.form || {};
     const formFields = [];
-    
+
     // Transform widget form configuration to array of field objects
     // Create plain objects that match the schema structure exactly
     if (formConfig.titleTextBox) {
@@ -71,7 +71,7 @@ console.log("widget reached",widget);
       };
       formFields.push(nameField);
     }
-    
+
     if (formConfig.hasEmail) {
       const emailField = {
         name: 'email',
@@ -85,7 +85,7 @@ console.log("widget reached",widget);
       };
       formFields.push(emailField);
     }
-    
+
     if (formConfig.hasPhoneNumber) {
       const phoneField = {
         name: 'phone',
@@ -99,7 +99,7 @@ console.log("widget reached",widget);
       };
       formFields.push(phoneField);
     }
-    
+
     // Add a default message field if no other fields are configured
     if (formFields.length === 0) {
       const messageField = {
@@ -110,25 +110,25 @@ console.log("widget reached",widget);
       };
       formFields.push(messageField);
     }
-    
+
     // Validate form data against widget configuration
     const validationErrors = [];
     for (const field of formFields) {
       if (field.required && (!formData[field.name] || formData[field.name].toString().trim() === '')) {
         validationErrors.push(`${field.name} is required`);
       }
-      
+
       if (formData[field.name] && field.validation) {
         const value = formData[field.name];
-        
+
         if (field.validation.minLength && value.toString().length < field.validation.minLength) {
           validationErrors.push(`${field.name} must be at least ${field.validation.minLength} characters`);
         }
-        
+
         if (field.validation.maxLength && value.toString().length > field.validation.maxLength) {
           validationErrors.push(`${field.name} must be no more than ${field.validation.maxLength} characters`);
         }
-        
+
         if (field.validation.pattern) {
           const regex = new RegExp(field.validation.pattern);
           if (!regex.test(value)) {
@@ -468,7 +468,7 @@ exports.bulkUpdateSubmissions = async (req, res, next) => {
 
     // Get submissions and verify access
     const submissions = await FormSubmission.find({ _id: { $in: submissionIds } });
-    
+
     for (const submission of submissions) {
       if (submission.businessId) {
         const business = await BusinessProfile.findOne({ _id: submission.businessId, userId });
@@ -484,7 +484,7 @@ exports.bulkUpdateSubmissions = async (req, res, next) => {
     // Perform bulk action
     const updatePromises = submissionIds.map(id => {
       const updateData = {};
-      
+
       switch (action) {
         case 'mark_read':
           updateData.status = 'read';
@@ -503,7 +503,7 @@ exports.bulkUpdateSubmissions = async (req, res, next) => {
         default:
           return Promise.reject(new Error('Invalid action'));
       }
-      
+
       return FormSubmission.findByIdAndUpdate(id, updateData, { new: true });
     });
 
