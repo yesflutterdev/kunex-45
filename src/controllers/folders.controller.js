@@ -1279,4 +1279,135 @@ exports.getFolderPages = async (req, res, next) => {
   } catch (error) {
     next(error);
   }
+};
+
+// Get folders with business pages grouped by industry
+exports.getFoldersGroupedByIndustry = async (req, res, next) => {
+  try {
+    const userId = req.user.id;
+
+    // Get all folders for the user
+    const folders = await Folder.find({ userId })
+      .select('_id name description color icon isDefault itemCount')
+      .sort({ sortOrder: 1, createdAt: 1 })
+      .lean();
+
+    // Process each folder to get business profiles grouped by industry
+    const foldersWithIndustries = await Promise.all(
+      folders.map(async (folder) => {
+        // Get all Page-type favorites in this folder
+        const pageFavorites = await Favorite.find({
+          folderId: folder._id,
+          userId,
+          type: 'Page'
+        })
+          .select('widgetId')
+          .lean();
+
+        if (pageFavorites.length === 0) {
+          return {
+            ...folder,
+            industries: {}
+          };
+        }
+
+        // Get BusinessProfile IDs from favorites
+        const businessProfileIds = pageFavorites
+          .filter(f => f.widgetId)
+          .map(f => f.widgetId);
+
+        // Fetch business profiles
+        const businessProfiles = await BusinessProfile.find({
+          _id: { $in: businessProfileIds }
+        })
+          .select('_id businessName username logo coverImage industry priceRange location.address location.city location.state location.country completionPercentage builderPageId createdAt updatedAt')
+          .populate('userId', 'firstName lastName')
+          .lean();
+
+        // Group business profiles by industry
+        const industries = {};
+        
+        businessProfiles.forEach((profile) => {
+          const industry = profile.industry || 'Uncategorized';
+          
+          if (!industries[industry]) {
+            industries[industry] = [];
+          }
+          
+          industries[industry].push({
+            _id: profile._id,
+            userId: profile.userId,
+            businessName: profile.businessName,
+            username: profile.username,
+            logo: profile.logo,
+            coverImage: profile.coverImage,
+            industry: profile.industry,
+            priceRange: profile.priceRange,
+            location: {
+              address: profile.location?.address || '',
+              city: profile.location?.city || '',
+              state: profile.location?.state || '',
+              country: profile.location?.country || ''
+            },
+            completionPercentage: profile.completionPercentage,
+            builderPageId: profile.builderPageId,
+            createdAt: profile.createdAt,
+            updatedAt: profile.updatedAt
+          });
+        });
+
+        // Calculate counts per industry
+        const industryCounts = Object.keys(industries).reduce((acc, industry) => {
+          acc[industry] = industries[industry].length;
+          return acc;
+        }, {});
+
+        // Recalculate actual itemCount from favorites (to fix any sync issues)
+        const actualItemCount = await Favorite.countDocuments({
+          folderId: folder._id,
+          userId,
+          type: 'Page'
+        });
+
+        return {
+          ...folder,
+          industries,
+          industryCounts,
+          totalBusinessPages: businessProfiles.length,
+          itemCount: actualItemCount // Use actual count instead of potentially stale DB value
+        };
+      })
+    );
+
+    // Calculate overall statistics
+    const totalFolders = foldersWithIndustries.length;
+    const totalBusinessPages = foldersWithIndustries.reduce(
+      (sum, folder) => sum + (folder.totalBusinessPages || 0),
+      0
+    );
+
+    // Get all unique industries across all folders
+    const allIndustries = new Set();
+    foldersWithIndustries.forEach((folder) => {
+      if (folder.industries) {
+        Object.keys(folder.industries).forEach((industry) => {
+          allIndustries.add(industry);
+        });
+      }
+    });
+
+    res.status(200).json({
+      success: true,
+      data: {
+        folders: foldersWithIndustries,
+        statistics: {
+          totalFolders,
+          totalBusinessPages,
+          uniqueIndustries: Array.from(allIndustries).sort()
+        }
+      }
+    });
+  } catch (error) {
+    next(error);
+  }
 }; 

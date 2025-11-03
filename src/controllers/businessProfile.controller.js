@@ -333,7 +333,7 @@ exports.getProfilesByIndustryParam = async (req, res, next) => {
     const escaped = matchIndustry.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const profiles = await BusinessProfile.find({ industry: { $regex: `^${escaped}$`, $options: 'i' } })
       .select(
-        '_id userId businessName username logo coverImage industry priceRange location.city location.state location.country completionPercentage builderPageId folderId createdAt updatedAt'
+        '_id userId businessName username logo coverImage industry priceRange location.address location.city location.state location.country completionPercentage builderPageId folderId createdAt updatedAt'
       )
       .populate('userId', 'firstName lastName')
       .sort({ updatedAt: -1 })

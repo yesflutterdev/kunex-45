@@ -210,7 +210,7 @@ favoriteSchema.statics.getUserFavoritesByType = async function(userId, options =
             description: businessProfile.description?.short || businessProfile.description?.full,
             pageType: "business",
             logo: businessProfile.logo,
-            cover: businessProfile.coverImages?.[0] || null,
+            cover: businessProfile.coverImage || null,
             isPublished: true,
             priceRange: businessProfile.priceRange,
             location: businessProfile.location
@@ -344,7 +344,7 @@ favoriteSchema.statics.getFavoritesGroupedByType = async function(userId, option
             description: businessProfile.description?.short || businessProfile.description?.full,
             pageType: "business",
             logo: businessProfile.logo,
-            cover: businessProfile.coverImages?.[0] || null,
+            cover: businessProfile.coverImage || null,
             isPublished: true,
             priceRange: businessProfile.priceRange,
             location: businessProfile.location

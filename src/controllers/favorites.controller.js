@@ -149,7 +149,7 @@ exports.addFavorite = async (req, res, next) => {
           description: content.description?.short || content.description?.full,
           pageType: "business",
           logo: content.logo,
-          cover: content.coverImages?.[0] || null,
+          cover: content.coverImage || null,
           isPublished: true,
           priceRange: content.priceRange,
           location: content.location
@@ -393,7 +393,7 @@ exports.getFavorite = async (req, res, next) => {
               description: businessProfile.description?.short || businessProfile.description?.full,
               pageType: "business",
               logo: businessProfile.logo,
-              cover: businessProfile.coverImages?.[0] || null,
+              cover: businessProfile.coverImage || null,
               isPublished: true,
               priceRange: businessProfile.priceRange,
               location: businessProfile.location
@@ -523,7 +523,7 @@ exports.updateFavorite = async (req, res, next) => {
               description: businessProfile.description?.short || businessProfile.description?.full,
               pageType: "business",
               logo: businessProfile.logo,
-              cover: businessProfile.coverImages?.[0] || null,
+              cover: businessProfile.coverImage || null,
               isPublished: true,
               priceRange: businessProfile.priceRange,
               location: businessProfile.location

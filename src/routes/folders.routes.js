@@ -956,6 +956,65 @@ router.post('/:folderId/duplicate', auth.authenticate, foldersController.duplica
  *       404:
  *         description: Folder not found
  */
+/**
+ * @swagger
+ * /api/folders/business-pages/groupByIndustries:
+ *   get:
+ *     summary: Get folders with business pages grouped by industry
+ *     description: Retrieve all folders for the logged-in user with their business pages grouped by industry
+ *     tags: [Folders]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Folders with business pages grouped by industry
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     folders:
+ *                       type: array
+ *                       items:
+ *                         type: object
+ *                         properties:
+ *                           _id:
+ *                             type: string
+ *                           name:
+ *                             type: string
+ *                           industries:
+ *                             type: object
+ *                             description: Business profiles grouped by industry name
+ *                             additionalProperties:
+ *                               type: array
+ *                           industryCounts:
+ *                             type: object
+ *                             additionalProperties:
+ *                               type: number
+ *                           totalBusinessPages:
+ *                             type: number
+ *                     statistics:
+ *                       type: object
+ *                       properties:
+ *                         totalFolders:
+ *                           type: number
+ *                         totalBusinessPages:
+ *                           type: number
+ *                         uniqueIndustries:
+ *                           type: array
+ *                           items:
+ *                             type: string
+ *       401:
+ *         description: Unauthorized
+ */
+router.get('/business-pages/groupByIndustries', auth.authenticate, foldersController.getFoldersGroupedByIndustry);
+
 router.get('/:folderId/business-pages', auth.authenticate, foldersController.getFolderBusinessPages);
 
 /**

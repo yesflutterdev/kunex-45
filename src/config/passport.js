@@ -30,6 +30,11 @@ passport.use(
           });
         }
 
+        // Check if user has a password (OAuth users might not have one)
+        if (!user.password) {
+          return done(null, false, { message: "Incorrect email or password" });
+        }
+
         // Check if password is correct
         const isMatch = await bcrypt.compare(password, user.password);
         if (!isMatch) {
