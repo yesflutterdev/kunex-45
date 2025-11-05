@@ -247,7 +247,10 @@ const widgetSchema = new mongoose.Schema(
           // Carousel fields
           carousel: {
             title: { type: String, default: '' },
-            url: { type: [String], default: [] }
+            url: { type: [String], default: [] },
+            sameForAll: { type: Boolean, default: false },
+            sameForAllUrl: { type: String },
+            onTapUrls: { type: [String], default: [] },
           },
 
           // Grid fields
