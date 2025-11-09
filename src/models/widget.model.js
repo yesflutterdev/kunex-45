@@ -279,10 +279,10 @@ const widgetSchema = new mongoose.Schema(
           ],
         },
 
-        // ✅ Add Google Reviews integration here
+        // Google Reviews
         googleReviews: {
           business: {
-            placeId: { type: String },
+            placeId: { type: String }, // this is Business URL
             name: { type: String },
             rating: { type: Number, default: 0 },
             reviewCount: { type: Number, default: 0 },
@@ -362,13 +362,6 @@ const widgetSchema = new mongoose.Schema(
         appIntegration: {
           appleStoreUrl: { type: String, default: '' },
           googlePlayUrl: { type: String, default: '' }
-        },
-
-        // Google Reviews fields
-        googleReviews: {
-          mediaImage: { type: String, default: '' },
-          title: { type: String, default: '' },
-          googleBusinessProfileUrl: { type: String, default: 'Google Business' }
         },
 
         // Google Maps fields
@@ -716,11 +709,6 @@ widgetSchema.methods.validateTypeSpecificSettings = function () {
     case 'dropdown':
       if (!settings.specific.dropdown?.headings || !Array.isArray(settings.specific.dropdown.headings)) {
         throw new Error('Dropdown widget requires headings array');
-      }
-      break;
-    case 'google_reviews':
-      if (!settings.specific.googleReviews?.title) {
-        throw new Error('Google Reviews widget requires a title');
       }
       break;
     case 'google_maps':
