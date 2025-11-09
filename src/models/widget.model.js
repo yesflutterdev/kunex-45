@@ -279,6 +279,32 @@ const widgetSchema = new mongoose.Schema(
           ],
         },
 
+        // ✅ Add Google Reviews integration here
+        googleReviews: {
+          business: {
+            placeId: { type: String },
+            name: { type: String },
+            rating: { type: Number, default: 0 },
+            reviewCount: { type: Number, default: 0 },
+            address: { type: String },
+            website: { type: String },
+            phoneNumber: { type: String },
+            latitude: { type: Number },
+            longitude: { type: Number },
+          },
+          reviews: [
+            {
+              authorName: { type: String, default: 'Anonymous' },
+              authorPhotoUrl: { type: String },
+              rating: { type: Number, default: 0, min: 0, max: 5 },
+              text: { type: String },
+              time: { type: Date },
+              relativeTimeDescription: { type: String },
+              language: { type: String },
+            },
+          ],
+        },
+
         // Form fields
         form: {
           addMedia: { type: String, default: '' }, // optional media
