@@ -281,25 +281,27 @@ const widgetSchema = new mongoose.Schema(
 
         // Google Reviews
         googleReviews: {
-          business: {
-            placeId: { type: String }, // this is Business URL
-            name: { type: String },
-            rating: { type: Number, default: 0 },
-            reviewCount: { type: Number, default: 0 },
-            address: { type: String },
-            website: { type: String },
-            phoneNumber: { type: String },
-            latitude: { type: Number },
-            longitude: { type: Number },
+          place_id: { type: String }, // Changed from placeId to place_id
+          name: { type: String },
+          rating: { type: Number, default: 0 },
+          user_ratings_total: { type: Number, default: 0 }, // Changed from reviewCount
+          formatted_address: { type: String }, // Changed from address
+          website: { type: String },
+          formatted_phone_number: { type: String }, // Changed from phoneNumber
+          geometry: {
+            location: {
+              lat: { type: Number },
+              lng: { type: Number }
+            }
           },
           reviews: [
             {
-              authorName: { type: String, default: 'Anonymous' },
-              authorPhotoUrl: { type: String },
+              author_name: { type: String, default: 'Anonymous' }, // Changed from authorName
+              profile_photo_url: { type: String }, // Changed from authorPhotoUrl
               rating: { type: Number, default: 0, min: 0, max: 5 },
               text: { type: String },
-              time: { type: Date },
-              relativeTimeDescription: { type: String },
+              time: { type: Number }, // Store as timestamp (milliseconds/1000)
+              relative_time_description: { type: String }, // Changed from relativeTimeDescription
               language: { type: String },
             },
           ],
