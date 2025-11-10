@@ -279,15 +279,15 @@ const widgetSchema = new mongoose.Schema(
           ],
         },
 
-        // Google Reviews
+
         googleReviews: {
-          place_id: { type: String }, // Changed from placeId to place_id
+          place_id: { type: String },
           name: { type: String },
           rating: { type: Number, default: 0 },
-          user_ratings_total: { type: Number, default: 0 }, // Changed from reviewCount
-          formatted_address: { type: String }, // Changed from address
+          user_ratings_total: { type: Number, default: 0 },
+          formatted_address: { type: String },
           website: { type: String },
-          formatted_phone_number: { type: String }, // Changed from phoneNumber
+          formatted_phone_number: { type: String },
           geometry: {
             location: {
               lat: { type: Number },
@@ -296,12 +296,12 @@ const widgetSchema = new mongoose.Schema(
           },
           reviews: [
             {
-              author_name: { type: String, default: 'Anonymous' }, // Changed from authorName
-              profile_photo_url: { type: String }, // Changed from authorPhotoUrl
+              author_name: { type: String, default: 'Anonymous' },
+              profile_photo_url: { type: String },
               rating: { type: Number, default: 0, min: 0, max: 5 },
               text: { type: String },
-              time: { type: Number }, // Store as timestamp (milliseconds/1000)
-              relative_time_description: { type: String }, // Changed from relativeTimeDescription
+              time: { type: Number },
+              relative_time_description: { type: String },
               language: { type: String },
             },
           ],
@@ -353,8 +353,8 @@ const widgetSchema = new mongoose.Schema(
         // Drop Down Text fields
         dropdown: {
           headings: [{
-            text: { type: String, default: 'Heading 1 Text' },
-            description: { type: String, default: 'Add a description of your business.' },
+            text: { type: String, default: '' },
+            description: { type: String, default: '' },
             maxCharacters: { type: Number, default: 140 }
           }],
           addAnotherTextBox: { type: Boolean, default: false }
@@ -368,19 +368,22 @@ const widgetSchema = new mongoose.Schema(
 
         // Google Maps fields
         googleMaps: {
-          location: { type: String, default: 'Los Angeles' }
+          placeId: { type: String },
+          location: { type: String },
+          lat: { type: Number },
+          lng: { type: Number }
         },
 
         // Reservations fields
         reservations: {
           reservationImage: { type: String, default: '' },
-          reservationUrl: { type: String, default: 'www.url.com' }
+          reservationUrl: { type: String, default: '' }
         },
 
         // Music Podcast fields
         musicPodcast: {
           podcastImage: { type: String, default: '' },
-          musicPodcastUrl: { type: String, default: 'www.url.com' }
+          musicPodcastUrl: { type: String, default: '' }
         },
 
         // Social Media Widgets fields

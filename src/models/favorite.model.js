@@ -201,7 +201,9 @@ favoriteSchema.statics.getUserFavoritesByType = async function(userId, options =
         };
       } else {
         // If not found in BuilderPage, try BusinessProfile
-        const businessProfile = await mongoose.model('BusinessProfile').findById(favorite.widgetId).lean();
+        const businessProfile = await mongoose.model('BusinessProfile').findById(favorite.widgetId)
+          .select('_id businessName username description logo coverImage industry priceRange location metrics.favoriteCount')
+          .lean();
         if (businessProfile) {
           favorite.pageData = {
             _id: businessProfile._id,
@@ -213,7 +215,9 @@ favoriteSchema.statics.getUserFavoritesByType = async function(userId, options =
             cover: businessProfile.coverImage || null,
             isPublished: true,
             priceRange: businessProfile.priceRange,
-            location: businessProfile.location
+            location: businessProfile.location,
+            industry: businessProfile.industry || null,
+            favoriteCount: businessProfile.metrics?.favoriteCount || 0
           };
         }
       }
@@ -335,7 +339,9 @@ favoriteSchema.statics.getFavoritesGroupedByType = async function(userId, option
         };
       } else {
         // If not found in BuilderPage, try BusinessProfile
-        const businessProfile = await mongoose.model('BusinessProfile').findById(favorite.widgetId).lean();
+        const businessProfile = await mongoose.model('BusinessProfile').findById(favorite.widgetId)
+          .select('_id businessName username description logo coverImage industry priceRange location metrics.favoriteCount')
+          .lean();
         if (businessProfile) {
           contentData = {
             _id: businessProfile._id,
@@ -347,7 +353,9 @@ favoriteSchema.statics.getFavoritesGroupedByType = async function(userId, option
             cover: businessProfile.coverImage || null,
             isPublished: true,
             priceRange: businessProfile.priceRange,
-            location: businessProfile.location
+            location: businessProfile.location,
+            industry: businessProfile.industry || null,
+            favoriteCount: businessProfile.metrics?.favoriteCount || 0
           };
         }
       }

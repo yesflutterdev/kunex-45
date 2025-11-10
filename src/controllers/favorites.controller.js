@@ -84,6 +84,16 @@ exports.addFavorite = async (req, res, next) => {
     });
     if (existingFavorite) {
       await existingFavorite.deleteOne();
+      
+      // Decrement favoriteCount for BusinessProfile if it's a Page type
+      if (type === 'Page' && content && content._isBusinessProfile) {
+        const businessProfile = await BusinessProfile.findById(widgetId);
+        if (businessProfile && businessProfile.metrics.favoriteCount > 0) {
+          businessProfile.metrics.favoriteCount -= 1;
+          await businessProfile.save();
+        }
+      }
+      
       return res.status(200).json({
         success: true,
         message: `${type} removed from favorites successfully`,
@@ -130,6 +140,15 @@ exports.addFavorite = async (req, res, next) => {
 
     await favorite.save();
 
+    // Increment favoriteCount for BusinessProfile if it's a Page type
+    if (type === 'Page' && content && content._isBusinessProfile) {
+      const businessProfile = await BusinessProfile.findById(widgetId);
+      if (businessProfile) {
+        businessProfile.metrics.favoriteCount += 1;
+        await businessProfile.save();
+      }
+    }
+
     // Populate the response based on content type
     let populatedFavorite = await Favorite.findById(favorite._id)
       .populate({
@@ -142,17 +161,24 @@ exports.addFavorite = async (req, res, next) => {
     if (type === 'Page') {
       if (content._isBusinessProfile) {
         // Handle BusinessProfile as Page
+        // Re-fetch to get updated favoriteCount and ensure we have industry
+        const businessProfile = await BusinessProfile.findById(widgetId)
+          .select('_id businessName username description logo coverImage industry priceRange location metrics.favoriteCount')
+          .lean();
+        
         populatedFavorite.pageData = {
-          _id: content._id,
-          title: content.businessName,
-          slug: content.username,
-          description: content.description?.short || content.description?.full,
+          _id: businessProfile._id,
+          title: businessProfile.businessName,
+          slug: businessProfile.username,
+          description: businessProfile.description?.short || businessProfile.description?.full,
           pageType: "business",
-          logo: content.logo,
-          cover: content.coverImage || null,
+          logo: businessProfile.logo,
+          cover: businessProfile.coverImage || null,
           isPublished: true,
-          priceRange: content.priceRange,
-          location: content.location
+          priceRange: businessProfile.priceRange,
+          location: businessProfile.location,
+          industry: businessProfile.industry || null,
+          favoriteCount: businessProfile.metrics?.favoriteCount || 0
         };
       } else {
         // Handle BuilderPage as Page
@@ -567,6 +593,15 @@ exports.removeFavorite = async (req, res, next) => {
         success: false,
         message: 'Favorite not found',
       });
+    }
+
+    // Decrement favoriteCount for BusinessProfile if it's a Page type
+    if (favorite.type === 'Page' && favorite.widgetId) {
+      const businessProfile = await BusinessProfile.findById(favorite.widgetId);
+      if (businessProfile && businessProfile.metrics.favoriteCount > 0) {
+        businessProfile.metrics.favoriteCount -= 1;
+        await businessProfile.save();
+      }
     }
 
     await favorite.deleteOne();
