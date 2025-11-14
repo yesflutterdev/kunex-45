@@ -265,11 +265,13 @@ const widgetSchema = new mongoose.Schema(
           },
 
           // Video fields
-          video: {
-            videoUrl: { type: String, default: '' },
-            videoTitle: { type: String, default: '' },
-            thumbnailUrl: { type: String, default: '' }
-          },
+          video: [
+            {
+              videoUrl: { type: String, default: '' },
+              videoTitle: { type: String, default: '' },
+              thumbnailUrl: { type: String, default: '' }
+            }
+          ],
 
           pdfs: [
             {
@@ -687,9 +689,9 @@ widgetSchema.methods.validateTypeSpecificSettings = function () {
           throw new Error('Photo grid requires a title');
         }
       } else if (mediaType === 'video') {
-        if (!settings.specific.media?.video?.videoTitle) {
-          throw new Error('Video widget requires a title');
-        }
+        // if (!settings.specific.media?.video?.videoTitle) {
+        //   throw new Error('Video widget requires a title');
+        // }
       }
       break;
     case 'form':
