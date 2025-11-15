@@ -342,15 +342,17 @@ const widgetSchema = new mongoose.Schema(
         ],
 
         // Event fields
-        event: {
-          eventImage: { type: String, default: '' },
-          title: { type: String, default: '' },
-          date: { type: String, default: '' }, // 26 Oct 2024 format
-          location: { type: String, default: '' },
-          ticketUrl: { type: String, default: '' },
-          enddate: { type: String, default: '' },
-          category: { type: String, default: '' }
-        },
+        event: [
+          {
+            eventImage: { type: String, default: '' },
+            title: { type: String, default: '' },
+            date: { type: String, default: '' }, // 26 Oct 2024 format
+            location: { type: String, default: '' },
+            ticketUrl: { type: String, default: '' },
+            enddate: { type: String, default: '' },
+            category: { type: String, default: '' }
+          }
+        ],
 
         // Drop Down Text fields
         dropdown: {
@@ -709,9 +711,9 @@ widgetSchema.methods.validateTypeSpecificSettings = function () {
       // The controller will handle converting single object to array
       break;
     case 'event':
-      if (!settings.specific.event?.title) {
-        throw new Error('Event widget requires a title');
-      }
+      // if (!settings.specific.event?.title) {
+      //   throw new Error('Event widget requires a title');
+      // }
       break;
     case 'dropdown':
       if (!settings.specific.dropdown?.headings || !Array.isArray(settings.specific.dropdown.headings)) {
