@@ -277,6 +277,7 @@ const widgetSchema = new mongoose.Schema(
             {
               title: { type: String, default: '' },
               pdfFile: { type: String, default: '' },
+              pdfImage: { type: String, default: '' },
             },
           ],
         },
