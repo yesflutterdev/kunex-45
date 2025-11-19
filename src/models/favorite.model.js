@@ -19,7 +19,7 @@ const favoriteSchema = new mongoose.Schema(
     },
     productId: {
       type: String, // For individual products within a products widget
-      required: function() {
+      required: function () {
         return this.type === 'Product';
       }
     },
@@ -110,13 +110,13 @@ favoriteSchema.index({ tags: 1 });
 favoriteSchema.index({ 'metadata.reminderDate': 1 });
 
 // Text index for search functionality
-favoriteSchema.index({ 
-  notes: 'text', 
-  tags: 'text' 
+favoriteSchema.index({
+  notes: 'text',
+  tags: 'text'
 });
 
 // Static method to get user's favorites grouped by type
-favoriteSchema.statics.getUserFavoritesByType = async function(userId, options = {}) {
+favoriteSchema.statics.getUserFavoritesByType = async function (userId, options = {}) {
   const {
     folderId,
     tags,
@@ -129,15 +129,15 @@ favoriteSchema.statics.getUserFavoritesByType = async function(userId, options =
   } = options;
 
   const query = { userId };
-  
+
   if (folderId) {
     query.folderId = folderId;
   }
-  
+
   if (tags && tags.length > 0) {
     query.tags = { $in: tags };
   }
-  
+
   if (rating) {
     query.rating = { $gte: rating };
   }
@@ -148,7 +148,7 @@ favoriteSchema.statics.getUserFavoritesByType = async function(userId, options =
 
   const sortOptions = {};
   const sortDirection = sortOrder === 'desc' ? -1 : 1;
-  
+
   switch (sortBy) {
     case 'name':
       // Will be handled in populate
@@ -223,17 +223,17 @@ favoriteSchema.statics.getUserFavoritesByType = async function(userId, options =
       }
     } else {
       const widget = await mongoose.model('Widget').findById(favorite.widgetId).lean();
-      
+
       if (widget) {
         if (favorite.type === 'Product' && favorite.productId) {
           // Find the specific product within the products array
           const products = widget.settings?.specific?.products || [];
-          
-          const specificProduct = products.find(p => 
-            p._id?.toString() === favorite.productId || 
+
+          const specificProduct = products.find(p =>
+            p._id?.toString() === favorite.productId ||
             p._id?.toString() === favorite.productId?.toString()
           );
-          
+
           if (specificProduct) {
             favorite.productData = {
               _id: favorite.productId,
@@ -276,7 +276,7 @@ favoriteSchema.statics.getUserFavoritesByType = async function(userId, options =
 };
 
 // Static method to get favorites grouped by type for the main favorites view
-favoriteSchema.statics.getFavoritesGroupedByType = async function(userId, options = {}) {
+favoriteSchema.statics.getFavoritesGroupedByType = async function (userId, options = {}) {
   const {
     folderId,
     tags,
@@ -285,15 +285,15 @@ favoriteSchema.statics.getFavoritesGroupedByType = async function(userId, option
   } = options;
 
   const query = { userId };
-  
+
   if (folderId) {
     query.folderId = folderId;
   }
-  
+
   if (tags && tags.length > 0) {
     query.tags = { $in: tags };
   }
-  
+
   if (rating) {
     query.rating = { $gte: rating };
   }
@@ -320,7 +320,7 @@ favoriteSchema.statics.getFavoritesGroupedByType = async function(userId, option
 
   for (const favorite of favorites) {
     let contentData = null;
-    
+
     if (favorite.type === 'Page') {
       // Try BuilderPage first
       let page = await mongoose.model('BuilderPage').findById(favorite.widgetId).lean();
@@ -366,7 +366,7 @@ favoriteSchema.statics.getFavoritesGroupedByType = async function(userId, option
           // Find the specific product within the products array
           const products = widget.settings?.specific?.products || [];
           const specificProduct = products.find(p => p._id?.toString() === favorite.productId);
-          
+          const userPage = await mongoose.model('BuilderPage').findById(widget.pageId).lean();
           if (specificProduct) {
             contentData = {
               _id: favorite.productId,
@@ -377,7 +377,9 @@ favoriteSchema.statics.getFavoritesGroupedByType = async function(userId, option
               productUrl: specificProduct.productUrl,
               widgetId: widget._id,
               widgetName: widget.name,
-              widgetType: widget.type
+              widgetType: widget.type,
+              pageId: widget.pageId,
+              pageLogo: userPage.logo,
             };
           }
         } else {
@@ -388,7 +390,9 @@ favoriteSchema.statics.getFavoritesGroupedByType = async function(userId, option
             type: widget.type,
             settings: widget.settings,
             layout: widget.layout,
-            status: widget.status
+            status: widget.status,
+            pageId: widget.pageId,
+            pageLogo: userPage.logo,
           };
         }
       }
@@ -429,7 +433,7 @@ favoriteSchema.statics.getFavoritesGroupedByType = async function(userId, option
 };
 
 // Static method to get favorites count by folder
-favoriteSchema.statics.getFavoriteCountsByFolder = function(userId) {
+favoriteSchema.statics.getFavoriteCountsByFolder = function (userId) {
   return this.aggregate([
     { $match: { userId: new mongoose.Types.ObjectId(userId) } },
     {
@@ -467,7 +471,7 @@ favoriteSchema.statics.getFavoriteCountsByFolder = function(userId) {
 };
 
 // Static method to get popular tags for user
-favoriteSchema.statics.getPopularTags = function(userId, limit = 20) {
+favoriteSchema.statics.getPopularTags = function (userId, limit = 20) {
   return this.aggregate([
     { $match: { userId: new mongoose.Types.ObjectId(userId) } },
     { $unwind: '$tags' },
@@ -492,15 +496,15 @@ favoriteSchema.statics.getPopularTags = function(userId, limit = 20) {
 };
 
 // Static method to check if widget is favorited by user
-favoriteSchema.statics.isFavorited = function(userId, widgetId) {
+favoriteSchema.statics.isFavorited = function (userId, widgetId) {
   return this.findOne({ userId, widgetId }).lean();
 };
 
 // Static method to get favorites with upcoming reminders
-favoriteSchema.statics.getUpcomingReminders = function(userId, days = 7) {
+favoriteSchema.statics.getUpcomingReminders = function (userId, days = 7) {
   const endDate = new Date();
   endDate.setDate(endDate.getDate() + days);
-  
+
   return this.find({
     userId,
     'metadata.reminderDate': {
@@ -508,16 +512,16 @@ favoriteSchema.statics.getUpcomingReminders = function(userId, days = 7) {
       $lte: endDate
     }
   })
-  .populate({
-    path: 'widgetId',
-    select: 'name type settings'
-  })
-  .sort({ 'metadata.reminderDate': 1 })
-  .lean();
+    .populate({
+      path: 'widgetId',
+      select: 'name type settings'
+    })
+    .sort({ 'metadata.reminderDate': 1 })
+    .lean();
 };
 
 // Instance method to increment visit count
-favoriteSchema.methods.incrementVisitCount = function() {
+favoriteSchema.methods.incrementVisitCount = function () {
   this.visitCount += 1;
   this.lastVisited = new Date();
   this.analytics.lastInteraction = new Date();
@@ -525,7 +529,7 @@ favoriteSchema.methods.incrementVisitCount = function() {
 };
 
 // Instance method to increment analytics
-favoriteSchema.methods.incrementAnalytics = function(type) {
+favoriteSchema.methods.incrementAnalytics = function (type) {
   if (['viewCount', 'shareCount', 'clickCount'].includes(type)) {
     this.analytics[type] += 1;
     this.analytics.lastInteraction = new Date();
@@ -535,12 +539,12 @@ favoriteSchema.methods.incrementAnalytics = function(type) {
 };
 
 // Pre-save middleware to update folder item count
-favoriteSchema.post('save', async function(doc) {
+favoriteSchema.post('save', async function (doc) {
   if (this.isNew) {
     const Folder = mongoose.model('Folder');
     await Folder.findByIdAndUpdate(
       doc.folderId,
-      { 
+      {
         $inc: { itemCount: 1 },
         $set: { 'metadata.lastAccessed': new Date() }
       }
@@ -549,11 +553,11 @@ favoriteSchema.post('save', async function(doc) {
 });
 
 // Pre-remove middleware to update folder item count
-favoriteSchema.post('deleteOne', { document: true, query: false }, async function(doc) {
+favoriteSchema.post('deleteOne', { document: true, query: false }, async function (doc) {
   const Folder = mongoose.model('Folder');
   await Folder.findByIdAndUpdate(
     doc.folderId,
-    { 
+    {
       $inc: { itemCount: -1 },
       $set: { 'metadata.lastAccessed': new Date() }
     }
