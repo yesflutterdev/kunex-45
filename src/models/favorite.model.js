@@ -380,7 +380,7 @@ favoriteSchema.statics.getFavoritesGroupedByType = async function (userId, optio
               widgetType: widget.type,
               pageId: widget.pageId,
               pageLogo: userPage.logo,
-              businessId: widget.businessId
+              businessId: userPage.businessId
             };
           }
         } else {
@@ -394,7 +394,7 @@ favoriteSchema.statics.getFavoritesGroupedByType = async function (userId, optio
             status: widget.status,
             pageId: widget.pageId,
             pageLogo: userPage.logo,
-            businessId: widget.businessId
+            businessId: userPage.businessId
           };
         }
       }
