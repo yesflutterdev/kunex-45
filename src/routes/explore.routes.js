@@ -459,6 +459,105 @@ router.get('/on-the-rise', auth.authenticate, exploreController.getOnTheRise);
 
 /**
  * @swagger
+ * /api/explore/recents:
+ *   get:
+ *     summary: Get recently viewed businesses (Recents)
+ *     description: Fetch businesses the user recently viewed, sorted by most recent view time
+ *     tags: [Explore]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: longitude
+ *         schema:
+ *           type: number
+ *           minimum: -180
+ *           maximum: 180
+ *         description: Longitude coordinate (optional)
+ *         example: -74.006
+ *       - in: query
+ *         name: latitude
+ *         schema:
+ *           type: number
+ *           minimum: -90
+ *           maximum: 90
+ *         description: Latitude coordinate (optional)
+ *         example: 40.7128
+ *       - in: query
+ *         name: maxDistance
+ *         schema:
+ *           type: number
+ *           minimum: 1000
+ *           maximum: 100000
+ *           default: 25000
+ *         description: Maximum search distance in meters
+ *         example: 25000
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: number
+ *           minimum: 1
+ *           maximum: 30
+ *           default: 15
+ *         description: Maximum number of results
+ *         example: 15
+ *       - in: query
+ *         name: category
+ *         schema:
+ *           type: string
+ *         description: Filter by business category
+ *         example: "Restaurant"
+ *       - in: query
+ *         name: priceRange
+ *         schema:
+ *           type: string
+ *           enum: ['$', '$$', '$$$', '$$$$']
+ *         description: Price range filter
+ *         example: "$$"
+ *     responses:
+ *       200:
+ *         description: Recently viewed businesses retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     businesses:
+ *                       type: array
+ *                       items:
+ *                         $ref: '#/components/schemas/BusinessWithDistance'
+ *                     searchCenter:
+ *                       type: object
+ *                       nullable: true
+ *                       properties:
+ *                         latitude:
+ *                           type: number
+ *                           example: 40.7128
+ *                         longitude:
+ *                           type: number
+ *                           example: -74.006
+ *                     totalFound:
+ *                       type: number
+ *                       description: Total number of businesses found
+ *                       example: 8
+ *                     sortedBy:
+ *                       type: string
+ *                       example: "recents"
+ *       400:
+ *         description: Validation error
+ *       401:
+ *         description: Unauthorized
+ */
+router.get('/recents', auth.authenticate, exploreController.getRecents);
+
+/**
+ * @swagger
  * /api/explore/businesses:
  *   get:
  *     summary: Comprehensive business exploration with all filters (KON-33)

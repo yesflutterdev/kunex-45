@@ -3,10 +3,10 @@ const Joi = require('joi');
 // Validate nearby businesses query parameters
 exports.validateNearbyBusinesses = (data) => {
   const schema = Joi.object({
-    longitude: Joi.number().min(-180).max(180).required(),
-    latitude: Joi.number().min(-90).max(90).required(),
-    maxDistance: Joi.number().min(100).max(100000).default(10000), // 100m to 100km
-    limit: Joi.number().min(1).max(50).default(20),
+    longitude: Joi.number().min(-180).max(180),
+    latitude: Joi.number().min(-90).max(90),
+    maxDistance: Joi.number().min(100).max(100000).default(25000), // 100m to 100km, default 25km
+    limit: Joi.number().min(1).max(50).default(15),
     category: Joi.string().trim().max(100).allow(''),
     rating: Joi.number().min(1).max(5),
     priceRange: Joi.alternatives().try(
@@ -245,6 +245,23 @@ exports.validateTrendingSearches = (data) => {
       radius: Joi.number().min(1000).max(100000).default(25000)
     })
   });
+
+  return schema.validate(data, { abortEarly: false });
+};
+
+// Validate recents query parameters
+exports.validateRecents = (data) => {
+  const schema = Joi.object({
+    longitude: Joi.number().min(-180).max(180),
+    latitude: Joi.number().min(-90).max(90),
+    maxDistance: Joi.number().min(1000).max(100000).default(25000), // 1km to 100km
+    limit: Joi.number().min(1).max(30).default(15),
+    category: Joi.string().trim().max(100).allow(''),
+    priceRange: Joi.alternatives().try(
+      Joi.string().valid('$', '$$', '$$$', '$$$$'),
+      Joi.array().items(Joi.string().valid('$', '$$', '$$$', '$$$$'))
+    )
+  }).and('longitude', 'latitude'); // Both coordinates required if one is provided
 
   return schema.validate(data, { abortEarly: false });
 }; 
