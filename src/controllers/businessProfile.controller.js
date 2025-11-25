@@ -52,7 +52,7 @@ exports.createProfile = async (req, res, next) => {
       userId,
       ...value,
     };
-
+    
     // Ensure logo and coverImage are passed through
     if (value.logo) profileData.logo = value.logo;
     if (value.coverImage) profileData.coverImage = value.coverImage;
@@ -83,10 +83,10 @@ exports.createProfile = async (req, res, next) => {
 
     // Create or update corresponding builder page
     const slug = value.username || `page-${Date.now()}`;
-
+    
     // Check if builder page already exists
     let builderPage = await BuilderPage.findOne({ userId, slug });
-
+    
     if (builderPage) {
       // Update existing page
       builderPage.businessId = profile._id;
@@ -267,7 +267,7 @@ exports.updateProfile = async (req, res, next) => {
     const builderPage = await BuilderPage.findOne({ businessId: profile._id });
     if (builderPage) {
       const syncData = {};
-
+      
       // Always sync all relevant fields to keep them in sync
       syncData.title = profile.businessName;
       syncData.username = profile.username;
@@ -276,11 +276,11 @@ exports.updateProfile = async (req, res, next) => {
       syncData.priceRange = profile.priceRange;
       syncData.industry = profile.industry;
       syncData.folderId = profile.folderId;
-
+      
       if (profile.location?.address) {
         syncData.location = profile.location.address;
       }
-
+      
       // Update builder page
       Object.assign(builderPage, syncData);
       await builderPage.save();
@@ -329,15 +329,158 @@ exports.getProfilesByIndustryParam = async (req, res, next) => {
       });
     }
 
-    // Case-insensitive match against stored industry 
+    const {
+      openNow,
+      nearby,
+      topRated,
+      price,
+      latitude,
+      longitude,
+      maxDistance = 25000
+    } = req.query;
+
     const escaped = matchIndustry.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const profiles = await BusinessProfile.find({ industry: { $regex: `^${escaped}$`, $options: 'i' } })
-      .select(
-        '_id userId businessName username logo coverImage industry priceRange location.address location.city location.state location.country completionPercentage builderPageId folderId createdAt updatedAt metrics.viewCount metrics.favoriteCount location.coordinates.coordinates'
-      )
+    const query = {
+      industry: { $regex: `^${escaped}$`, $options: 'i' }
+    };
+
+    if (openNow === 'true' || openNow === true) {
+      const now = new Date();
+      const currentDay = now.toLocaleDateString('en-US', { weekday: 'long' });
+      const currentTime = now.toTimeString().slice(0, 5);
+
+      query.businessHours = {
+        $elemMatch: {
+          day: currentDay,
+          isClosed: false,
+          $and: [
+            { open: { $ne: "" } },
+            { close: { $ne: "" } },
+            { open: { $lte: currentTime } },
+            { close: { $gte: currentTime } }
+          ]
+        }
+      };
+    }
+
+    if (nearby === 'true' || nearby === true) {
+      if (!latitude || !longitude) {
+        return res.status(400).json({
+          success: false,
+          message: 'Latitude and longitude are required for nearby filter'
+        });
+      }
+
+      const lat = parseFloat(latitude);
+      const lng = parseFloat(longitude);
+      const maxDist = parseFloat(maxDistance);
+
+      if (isNaN(lat) || isNaN(lng) || lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid latitude or longitude values'
+        });
+      }
+
+      query['location.coordinates'] = {
+        $near: {
+          $geometry: {
+            type: 'Point',
+            coordinates: [lng, lat]
+          },
+          $maxDistance: maxDist
+        }
+      };
+    }
+
+    if (topRated === 'true' || topRated === true) {
+      const ratingStats = await BusinessProfile.aggregate([
+        {
+          $match: {
+            industry: { $regex: `^${escaped}$`, $options: 'i' }
+          }
+        },
+        {
+          $group: {
+            _id: null,
+            withRatings: {
+              $sum: { $cond: [{ $gt: ['$metrics.ratingAverage', 0] }, 1, 0] }
+            },
+            topRated: {
+              $sum: {
+                $cond: [
+                  {
+                    $and: [
+                      { $gte: ['$metrics.ratingAverage', 3.5] },
+                      { $gte: ['$metrics.ratingCount', 10] }
+                    ]
+                  },
+                  1,
+                  0
+                ]
+              }
+            }
+          }
+        }
+      ]);
+
+      const stats = ratingStats[0] || {};
+      
+      if (stats.topRated > 0) {
+        query['metrics.ratingAverage'] = { $gte: 3.5 };
+        query['metrics.ratingCount'] = { $gte: 10 };
+      } else if (stats.withRatings > 0) {
+        query['metrics.ratingAverage'] = { $gt: 0 };
+        query['metrics.ratingCount'] = { $gt: 0 };
+      }
+    }
+
+    if (price) {
+      const validPriceRanges = ['$', '$$', '$$$', '$$$$'];
+      if (Array.isArray(price)) {
+        const validPrices = price.filter(p => validPriceRanges.includes(p));
+        if (validPrices.length > 0) {
+          query.priceRange = { $in: validPrices };
+        }
+      } else if (validPriceRanges.includes(price)) {
+        query.priceRange = price;
+      }
+    }
+
+    const selectFields = '_id userId businessName username logo coverImage industry priceRange location.address location.city location.state location.country location.coordinates completionPercentage builderPageId folderId createdAt updatedAt metrics.ratingAverage metrics.ratingCount';
+
+    const sort = {};
+    if (nearby === 'true' || nearby === true) {
+      sort['metrics.ratingAverage'] = -1;
+    } else if (topRated === 'true' || topRated === true) {
+      sort['metrics.ratingAverage'] = -1;
+      sort['metrics.ratingCount'] = -1;
+    } else if (openNow === 'true' || openNow === true) {
+      sort['metrics.ratingAverage'] = -1;
+      sort['metrics.viewCount'] = -1;
+    } else {
+      sort.updatedAt = -1;
+    }
+
+    let profiles = await BusinessProfile.find(query)
+      .select(selectFields)
       .populate('userId', 'firstName lastName')
-      .sort({ updatedAt: -1 })
+      .sort(sort)
       .lean();
+
+    if ((nearby === 'true' || nearby === true) && latitude && longitude) {
+      const lat = parseFloat(latitude);
+      const lng = parseFloat(longitude);
+      
+      profiles = profiles.map(profile => {
+        if (profile.location && profile.location.coordinates && profile.location.coordinates.coordinates) {
+          const [profLng, profLat] = profile.location.coordinates.coordinates;
+          const distance = calculateDistance(lat, lng, profLat, profLng);
+          return { ...profile, distance };
+        }
+        return profile;
+      });
+    }
 
     res.status(200).json({
       success: true,

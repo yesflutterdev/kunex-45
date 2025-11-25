@@ -886,6 +886,82 @@ router.delete('/cover-images', authenticate, isVerified, businessProfileControll
  */
 router.get('/search', businessProfileController.searchProfiles);
 
+/**
+ * @swagger
+ * /api/profile/business/industry/{industry}:
+ *   get:
+ *     summary: Get business profiles by industry with optional filters
+ *     tags: [Business Profile]
+ *     parameters:
+ *       - in: path
+ *         name: industry
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Industry name (Restaurant, Photography & Videography, Pet Grooming, Hair Salon, Business man)
+ *       - in: query
+ *         name: openNow
+ *         schema:
+ *           type: boolean
+ *         description: Filter businesses that are currently open
+ *       - in: query
+ *         name: nearby
+ *         schema:
+ *           type: boolean
+ *         description: Filter businesses nearby (requires latitude and longitude)
+ *       - in: query
+ *         name: latitude
+ *         schema:
+ *           type: number
+ *           minimum: -90
+ *           maximum: 90
+ *         description: Latitude coordinate (required for nearby filter)
+ *       - in: query
+ *         name: longitude
+ *         schema:
+ *           type: number
+ *           minimum: -180
+ *           maximum: 180
+ *         description: Longitude coordinate (required for nearby filter)
+ *       - in: query
+ *         name: maxDistance
+ *         schema:
+ *           type: number
+ *           minimum: 100
+ *           maximum: 100000
+ *           default: 25000
+ *         description: Maximum distance in meters for nearby filter
+ *       - in: query
+ *         name: topRated
+ *         schema:
+ *           type: boolean
+ *         description: Filter top-rated businesses (3.5+ stars with at least 10 reviews)
+ *       - in: query
+ *         name: price
+ *         schema:
+ *           type: string
+ *           enum: [$, $$, $$$, $$$$]
+ *         description: Filter by price range
+ *     responses:
+ *       200:
+ *         description: Business profiles retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     profiles:
+ *                       type: array
+ *                       items:
+ *                         $ref: '#/components/schemas/BusinessProfile'
+ *       400:
+ *         description: Validation error
+ */
 // Get business profiles by allowed industry via URL param (public)
 router.get('/industry/:industry', businessProfileController.getProfilesByIndustryParam);
 
