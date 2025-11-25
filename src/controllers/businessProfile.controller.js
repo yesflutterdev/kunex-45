@@ -52,7 +52,7 @@ exports.createProfile = async (req, res, next) => {
       userId,
       ...value,
     };
-    
+
     // Ensure logo and coverImage are passed through
     if (value.logo) profileData.logo = value.logo;
     if (value.coverImage) profileData.coverImage = value.coverImage;
@@ -83,10 +83,10 @@ exports.createProfile = async (req, res, next) => {
 
     // Create or update corresponding builder page
     const slug = value.username || `page-${Date.now()}`;
-    
+
     // Check if builder page already exists
     let builderPage = await BuilderPage.findOne({ userId, slug });
-    
+
     if (builderPage) {
       // Update existing page
       builderPage.businessId = profile._id;
@@ -267,7 +267,7 @@ exports.updateProfile = async (req, res, next) => {
     const builderPage = await BuilderPage.findOne({ businessId: profile._id });
     if (builderPage) {
       const syncData = {};
-      
+
       // Always sync all relevant fields to keep them in sync
       syncData.title = profile.businessName;
       syncData.username = profile.username;
@@ -276,11 +276,11 @@ exports.updateProfile = async (req, res, next) => {
       syncData.priceRange = profile.priceRange;
       syncData.industry = profile.industry;
       syncData.folderId = profile.folderId;
-      
+
       if (profile.location?.address) {
         syncData.location = profile.location.address;
       }
-      
+
       // Update builder page
       Object.assign(builderPage, syncData);
       await builderPage.save();
@@ -329,11 +329,11 @@ exports.getProfilesByIndustryParam = async (req, res, next) => {
       });
     }
 
-    // Case-insensitive match against stored industry
+    // Case-insensitive match against stored industry 
     const escaped = matchIndustry.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const profiles = await BusinessProfile.find({ industry: { $regex: `^${escaped}$`, $options: 'i' } })
       .select(
-        '_id userId businessName username logo coverImage industry priceRange location.address location.city location.state location.country completionPercentage builderPageId folderId createdAt updatedAt'
+        '_id userId businessName username logo coverImage industry priceRange location.address location.city location.state location.country completionPercentage builderPageId folderId createdAt updatedAt metrics.viewCount metrics.favoriteCount location.coordinates.coordinates'
       )
       .populate('userId', 'firstName lastName')
       .sort({ updatedAt: -1 })
