@@ -1142,4 +1142,227 @@ router.post('/reminders', auth.authenticate, favoritesController.setReminder);
  */
 router.get('/reminders/upcoming', auth.authenticate, favoritesController.getUpcomingReminders);
 
+/**
+ * @swagger
+ * /api/favorites/businesses/widgets:
+ *   get:
+ *     summary: Get newly added widgets from favorited businesses
+ *     description: Retrieve widgets that were added after the user favorited the business. Only returns widgets created after the favorite date.
+ *     tags: [Favorites]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: widgetType
+ *         schema:
+ *           type: string
+ *         description: Filter by widget type (e.g., products, promotions, event)
+ *       - in: query
+ *         name: businessId
+ *         schema:
+ *           type: string
+ *           pattern: '^[0-9a-fA-F]{24}$'
+ *         description: Filter by specific business ID
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *           minimum: 1
+ *           default: 1
+ *         description: Page number
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           minimum: 1
+ *           maximum: 100
+ *           default: 20
+ *         description: Results per page
+ *       - in: query
+ *         name: sortBy
+ *         schema:
+ *           type: string
+ *           enum: [createdAt, updatedAt, name, type]
+ *           default: createdAt
+ *         description: Sort field
+ *       - in: query
+ *         name: sortOrder
+ *         schema:
+ *           type: string
+ *           enum: [asc, desc]
+ *           default: desc
+ *         description: Sort order
+ *     responses:
+ *       200:
+ *         description: Widgets retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     widgets:
+ *                       type: array
+ *                       items:
+ *                         type: object
+ *                         properties:
+ *                           _id:
+ *                             type: string
+ *                           name:
+ *                             type: string
+ *                           type:
+ *                             type: string
+ *                           businessId:
+ *                             type: string
+ *                           businessInfo:
+ *                             type: object
+ *                             properties:
+ *                               _id:
+ *                                 type: string
+ *                               businessName:
+ *                                 type: string
+ *                               username:
+ *                                 type: string
+ *                               logo:
+ *                                 type: string
+ *                               industry:
+ *                                 type: string
+ *                           favoritedAt:
+ *                             type: string
+ *                             format: date-time
+ *                           createdAt:
+ *                             type: string
+ *                             format: date-time
+ *                     pagination:
+ *                       type: object
+ *                       properties:
+ *                         currentPage:
+ *                           type: integer
+ *                         totalPages:
+ *                           type: integer
+ *                         totalWidgets:
+ *                           type: integer
+ *                         hasNextPage:
+ *                           type: boolean
+ *                         hasPrevPage:
+ *                           type: boolean
+ *                         limit:
+ *                           type: integer
+ *       401:
+ *         description: Unauthorized
+ */
+router.get('/businesses/widgets', auth.authenticate, favoritesController.getFavoritedBusinessWidgets);
+
+/**
+ * @swagger
+ * /api/favorites/businesses/overview:
+ *   get:
+ *     summary: Get status overview of favorited businesses with new widgets
+ *     description: Returns list of businesses that have new widgets added after being favorited (for status circles/overview)
+ *     tags: [Favorites]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Overview retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       logo:
+ *                         type: string
+ *                       name:
+ *                         type: string
+ *                       pageId:
+ *                         type: string
+ *                       businessId:
+ *                         type: string
+ *       401:
+ *         description: Unauthorized
+ */
+router.get('/businesses/overview', auth.authenticate, favoritesController.getFavoritedBusinessesOverview);
+
+/**
+ * @swagger
+ * /api/favorites/businesses/details:
+ *   get:
+ *     summary: Get detailed data for specific favorited business
+ *     description: Returns page data and widgets for a specific business/page that was favorited
+ *     tags: [Favorites]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: pageId
+ *         schema:
+ *           type: string
+ *           pattern: '^[0-9a-fA-F]{24}$'
+ *         description: Builder page ID
+ *       - in: query
+ *         name: businessId
+ *         schema:
+ *           type: string
+ *           pattern: '^[0-9a-fA-F]{24}$'
+ *         description: Business profile ID
+ *     responses:
+ *       200:
+ *         description: Details retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     pageData:
+ *                       type: object
+ *                       properties:
+ *                         coverImage:
+ *                           type: string
+ *                         logo:
+ *                           type: string
+ *                         name:
+ *                           type: string
+ *                         pageId:
+ *                           type: string
+ *                         businessId:
+ *                           type: string
+ *                         industry:
+ *                           type: string
+ *                         address:
+ *                           type: string
+ *                         timeWidgetAdded:
+ *                           type: string
+ *                           format: date-time
+ *                     widgets:
+ *                       type: array
+ *                       items:
+ *                         $ref: '#/components/schemas/Widget'
+ *       400:
+ *         description: Validation error
+ *       401:
+ *         description: Unauthorized
+ *       403:
+ *         description: Business not favorited
+ *       404:
+ *         description: Business or page not found
+ */
+router.get('/businesses/details', auth.authenticate, favoritesController.getFavoritedBusinessDetails);
+
 module.exports = router; 

@@ -233,4 +233,28 @@ exports.validateExportPreferences = (data) => {
   });
 
   return schema.validate(data, { abortEarly: false });
+};
+
+// Validate get favorited business widgets query
+exports.validateFavoritedBusinessWidgets = (data) => {
+  const schema = Joi.object({
+    widgetType: Joi.string().trim(),
+    businessId: Joi.string().pattern(/^[0-9a-fA-F]{24}$/),
+    page: Joi.number().integer().min(1).default(1),
+    limit: Joi.number().integer().min(1).max(100).default(20),
+    sortBy: Joi.string().valid('createdAt', 'updatedAt', 'name', 'type').default('createdAt'),
+    sortOrder: Joi.string().valid('asc', 'desc').default('desc')
+  });
+
+  return schema.validate(data, { abortEarly: false });
+};
+
+// Validate get favorited business details query
+exports.validateFavoritedBusinessDetails = (data) => {
+  const schema = Joi.object({
+    pageId: Joi.string().pattern(/^[0-9a-fA-F]{24}$/),
+    businessId: Joi.string().pattern(/^[0-9a-fA-F]{24}$/)
+  }).or('pageId', 'businessId');
+
+  return schema.validate(data, { abortEarly: false });
 }; 

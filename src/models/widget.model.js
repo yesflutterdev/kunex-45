@@ -653,16 +653,29 @@ widgetSchema.virtual('displayName').get(function () {
 });
 
 // Pre-save middleware
-widgetSchema.pre('save', function (next) {
-  // Set author if not set
-  if (!this.metadata.author && this.userId) {
-    this.metadata.author = this.userId;
+widgetSchema.pre('save', async function (next) {
+  try {
+    // Set author if not set
+    if (!this.metadata.author && this.userId) {
+      this.metadata.author = this.userId;
+    }
+
+    // Auto-populate businessId from BuilderPage if pageId exists and businessId is missing
+    if (this.pageId && !this.businessId) {
+      const BuilderPage = mongoose.model('BuilderPage');
+      const page = await BuilderPage.findById(this.pageId).select('businessId').lean();
+      if (page && page.businessId) {
+        this.businessId = page.businessId;
+      }
+    }
+
+    // Validate specific settings based on type
+    this.validateTypeSpecificSettings();
+
+    next();
+  } catch (error) {
+    next(error);
   }
-
-  // Validate specific settings based on type
-  this.validateTypeSpecificSettings();
-
-  next();
 });
 
 // Instance methods

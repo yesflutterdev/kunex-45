@@ -10,7 +10,9 @@ const {
   validateGetFavorites,
   validateBulkFavoriteOperation,
   validateAnalyticsQuery,
-  validateReminderSettings
+  validateReminderSettings,
+  validateFavoritedBusinessWidgets,
+  validateFavoritedBusinessDetails
 } = require('../utils/favoritesValidation');
 
 // Add widget to favorites
@@ -906,6 +908,500 @@ exports.getUpcomingReminders = async (req, res, next) => {
       data: { reminders },
     });
   } catch (error) {
+    next(error);
+  }
+};
+
+exports.getFavoritedBusinessWidgets = async (req, res, next) => {
+  try {
+    const userId = req.user.id;
+    const { 
+      widgetType, 
+      businessId, 
+      page = 1, 
+      limit = 20,
+      sortBy = 'createdAt',
+      sortOrder = 'desc'
+    } = req.query;
+
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+
+    const favorites = await Favorite.find({
+      userId,
+      type: { $in: ['Page', 'BusinessProfile'] }
+    })
+      .select('widgetId createdAt')
+      .lean();
+
+    if (favorites.length === 0) {
+      return res.status(200).json({
+        success: true,
+        data: {
+          widgets: [],
+          pagination: {
+            currentPage: parseInt(page),
+            totalPages: 0,
+            totalWidgets: 0,
+            hasNextPage: false,
+            hasPrevPage: false,
+            limit: parseInt(limit)
+          }
+        }
+      });
+    }
+
+    const businessFavoriteMap = new Map();
+    favorites.forEach(fav => {
+      const bid = fav.widgetId.toString();
+      const favoritedAt = fav.createdAt;
+      
+      if (!businessFavoriteMap.has(bid) || 
+          businessFavoriteMap.get(bid) < favoritedAt) {
+        businessFavoriteMap.set(bid, favoritedAt);
+      }
+    });
+
+    const businessIds = Array.from(businessFavoriteMap.keys()).map(id => new mongoose.Types.ObjectId(id));
+    
+    if (businessId && !businessIds.some(id => id.toString() === businessId)) {
+      return res.status(200).json({
+        success: true,
+        data: {
+          widgets: [],
+          pagination: {
+            currentPage: parseInt(page),
+            totalPages: 0,
+            totalWidgets: 0,
+            hasNextPage: false,
+            hasPrevPage: false,
+            limit: parseInt(limit)
+          }
+        }
+      });
+    }
+
+    const targetBusinessIds = businessId 
+      ? [new mongoose.Types.ObjectId(businessId)] 
+      : businessIds;
+
+    const matchStage = {
+      businessId: { $in: targetBusinessIds },
+      status: 'active',
+      isVisible: true
+    };
+
+    if (widgetType) {
+      matchStage.type = widgetType;
+    }
+
+    const widgets = await Widget.aggregate([
+      { $match: matchStage },
+      {
+        $lookup: {
+          from: 'businessprofiles',
+          localField: 'businessId',
+          foreignField: '_id',
+          as: 'business'
+        }
+      },
+      {
+        $unwind: {
+          path: '$business',
+          preserveNullAndEmptyArrays: true
+        }
+      },
+      {
+        $addFields: {
+          businessInfo: {
+            _id: '$business._id',
+            businessName: '$business.businessName',
+            username: '$business.username',
+            logo: '$business.logo',
+            industry: '$business.industry'
+          }
+        }
+      },
+      {
+        $project: {
+          business: 0
+        }
+      }
+    ]);
+
+    const filteredWidgets = widgets.filter(widget => {
+      const bid = widget.businessId?.toString();
+      const favoritedAt = businessFavoriteMap.get(bid);
+      return favoritedAt && new Date(widget.createdAt) > new Date(favoritedAt);
+    });
+
+    filteredWidgets.forEach(widget => {
+      const bid = widget.businessId?.toString();
+      widget.favoritedAt = businessFavoriteMap.get(bid);
+    });
+
+    const sortField = sortBy === 'createdAt' ? 'createdAt' : sortBy;
+    const sortDirection = sortOrder === 'desc' ? -1 : 1;
+    
+    filteredWidgets.sort((a, b) => {
+      const aVal = a[sortField];
+      const bVal = b[sortField];
+      if (aVal < bVal) return -sortDirection;
+      if (aVal > bVal) return sortDirection;
+      return 0;
+    });
+
+    const totalCount = filteredWidgets.length;
+    const paginatedWidgets = filteredWidgets.slice(skip, skip + parseInt(limit));
+    const totalPages = Math.ceil(totalCount / parseInt(limit));
+
+    res.status(200).json({
+      success: true,
+      data: {
+        widgets: paginatedWidgets,
+        pagination: {
+          currentPage: parseInt(page),
+          totalPages,
+          totalWidgets: totalCount,
+          hasNextPage: parseInt(page) < totalPages,
+          hasPrevPage: parseInt(page) > 1,
+          limit: parseInt(limit)
+        }
+      }
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+exports.getFavoritedBusinessesOverview = async (req, res, next) => {
+  try {
+    const userId = req.user?.id;
+
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        message: 'Unauthorized: User ID is required'
+      });
+    }
+
+    if (!mongoose.Types.ObjectId.isValid(userId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid user ID format'
+      });
+    }
+
+    const favorites = await Favorite.find({
+      userId: new mongoose.Types.ObjectId(userId),
+      type: { $in: ['Page', 'BusinessProfile'] },
+      widgetId: { $exists: true, $ne: null }
+    })
+      .select('widgetId createdAt')
+      .lean();
+
+    if (!favorites || favorites.length === 0) {
+      return res.status(200).json({
+        success: true,
+        data: []
+      });
+    }
+
+    const businessFavoriteMap = new Map();
+    const validBusinessIds = [];
+
+    for (const fav of favorites) {
+      if (!fav || !fav.widgetId) continue;
+
+      const bid = fav.widgetId.toString();
+      if (!mongoose.Types.ObjectId.isValid(bid)) continue;
+
+      const favoritedAt = fav.createdAt ? new Date(fav.createdAt) : null;
+      if (!favoritedAt || isNaN(favoritedAt.getTime())) continue;
+
+      if (!businessFavoriteMap.has(bid) || 
+          businessFavoriteMap.get(bid) < favoritedAt) {
+        businessFavoriteMap.set(bid, favoritedAt);
+        if (!validBusinessIds.includes(bid)) {
+          validBusinessIds.push(bid);
+        }
+      }
+    }
+
+    if (validBusinessIds.length === 0) {
+      return res.status(200).json({
+        success: true,
+        data: []
+      });
+    }
+
+    const businessObjectIds = validBusinessIds
+      .filter(id => mongoose.Types.ObjectId.isValid(id))
+      .map(id => new mongoose.Types.ObjectId(id));
+
+    if (businessObjectIds.length === 0) {
+      return res.status(200).json({
+        success: true,
+        data: []
+      });
+    }
+
+    const widgets = await Widget.find({
+      businessId: { $in: businessObjectIds },
+      status: 'active',
+      isVisible: true,
+      createdAt: { $exists: true, $ne: null }
+    })
+      .select('businessId createdAt')
+      .lean();
+
+    const businessesWithNewWidgets = new Map();
+
+    for (const widget of widgets) {
+      if (!widget || !widget.businessId || !widget.createdAt) continue;
+
+      const bid = widget.businessId.toString();
+      if (!mongoose.Types.ObjectId.isValid(bid)) continue;
+
+      const favoritedAt = businessFavoriteMap.get(bid);
+      if (!favoritedAt) continue;
+
+      const widgetCreatedAt = new Date(widget.createdAt);
+      if (isNaN(widgetCreatedAt.getTime())) continue;
+
+      if (widgetCreatedAt > favoritedAt) {
+        if (!businessesWithNewWidgets.has(bid)) {
+          businessesWithNewWidgets.set(bid, {
+            businessId: bid,
+            favoritedAt
+          });
+        }
+      }
+    }
+
+    if (businessesWithNewWidgets.size === 0) {
+      return res.status(200).json({
+        success: true,
+        data: []
+      });
+    }
+
+    const businessIdsWithNewWidgets = Array.from(businessesWithNewWidgets.keys())
+      .filter(id => mongoose.Types.ObjectId.isValid(id))
+      .map(id => new mongoose.Types.ObjectId(id));
+
+    if (businessIdsWithNewWidgets.length === 0) {
+      return res.status(200).json({
+        success: true,
+        data: []
+      });
+    }
+
+    const businesses = await BusinessProfile.find({
+      _id: { $in: businessIdsWithNewWidgets }
+    })
+      .select('_id businessName logo builderPageId')
+      .lean();
+
+    const result = businesses
+      .filter(business => business && business._id)
+      .map(business => ({
+        logo: business.logo || null,
+        name: business.businessName || null,
+        pageId: business.builderPageId && mongoose.Types.ObjectId.isValid(business.builderPageId)
+          ? business.builderPageId.toString()
+          : null,
+        businessId: business._id.toString()
+      }))
+      .filter(item => item.name && item.businessId);
+
+    res.status(200).json({
+      success: true,
+      data: result
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+exports.getFavoritedBusinessDetails = async (req, res, next) => {
+  try {
+    const userId = req.user?.id;
+
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        message: 'Unauthorized: User ID is required'
+      });
+    }
+
+    if (!mongoose.Types.ObjectId.isValid(userId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid user ID format'
+      });
+    }
+
+    const { error, value } = validateFavoritedBusinessDetails(req.query);
+    if (error) {
+      return res.status(400).json({
+        success: false,
+        message: 'Validation error',
+        errors: error.details.map(detail => detail.message)
+      });
+    }
+
+    const { pageId, businessId } = value;
+
+    let business = null;
+    let builderPage = null;
+    let pageIdToUse = null;
+
+    if (businessId) {
+      if (!mongoose.Types.ObjectId.isValid(businessId)) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid businessId format'
+        });
+      }
+
+      business = await BusinessProfile.findById(businessId)
+        .select('_id businessName logo coverImage builderPageId industry location.address location.city location.state location.country')
+        .lean();
+
+      if (!business || !business._id) {
+        return res.status(404).json({
+          success: false,
+          message: 'Business not found'
+        });
+      }
+
+      if (business.builderPageId && mongoose.Types.ObjectId.isValid(business.builderPageId)) {
+        builderPage = await BuilderPage.findById(business.builderPageId)
+          .select('_id title cover logo')
+          .lean();
+        pageIdToUse = business.builderPageId;
+      }
+    } else if (pageId) {
+      if (!mongoose.Types.ObjectId.isValid(pageId)) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid pageId format'
+        });
+      }
+
+      builderPage = await BuilderPage.findById(pageId)
+        .select('_id title cover logo businessId')
+        .lean();
+
+      if (!builderPage || !builderPage._id) {
+        return res.status(404).json({
+          success: false,
+          message: 'Page not found'
+        });
+      }
+
+      pageIdToUse = builderPage._id;
+
+      if (builderPage.businessId && mongoose.Types.ObjectId.isValid(builderPage.businessId)) {
+        business = await BusinessProfile.findById(builderPage.businessId)
+          .select('_id businessName logo coverImage industry location.address location.city location.state location.country')
+          .lean();
+      }
+    }
+
+    if (!business || !business._id) {
+      return res.status(404).json({
+        success: false,
+        message: 'Business not found'
+      });
+    }
+
+    if (!pageIdToUse) {
+      return res.status(404).json({
+        success: false,
+        message: 'Builder page not found for this business'
+      });
+    }
+
+    const favorite = await Favorite.findOne({
+      userId: new mongoose.Types.ObjectId(userId),
+      type: { $in: ['Page', 'BusinessProfile'] },
+      widgetId: business._id
+    })
+      .select('createdAt')
+      .sort({ createdAt: -1 })
+      .lean();
+
+    if (!favorite || !favorite.createdAt) {
+      return res.status(403).json({
+        success: false,
+        message: 'Business is not favorited by user'
+      });
+    }
+
+    const favoritedAt = new Date(favorite.createdAt);
+    if (isNaN(favoritedAt.getTime())) {
+      return res.status(500).json({
+        success: false,
+        message: 'Invalid favorite date'
+      });
+    }
+
+    const newWidgets = await Widget.find({
+      pageId: pageIdToUse,
+      status: 'active',
+      isVisible: true,
+      createdAt: { $gt: favoritedAt, $exists: true, $ne: null }
+    })
+      .sort({ order: 1, createdAt: 1 })
+      .lean();
+
+    let latestWidgetDate = favoritedAt;
+    if (newWidgets && newWidgets.length > 0) {
+      const validDates = newWidgets
+        .map(w => w.createdAt ? new Date(w.createdAt) : null)
+        .filter(date => date && !isNaN(date.getTime()));
+
+      if (validDates.length > 0) {
+        latestWidgetDate = new Date(Math.max(...validDates.map(d => d.getTime())));
+      }
+    }
+
+    const addressParts = [];
+    if (business.location?.address) {
+      addressParts.push(business.location.address);
+    }
+    if (business.location?.city) {
+      addressParts.push(business.location.city);
+    }
+    if (business.location?.state) {
+      addressParts.push(business.location.state);
+    }
+    const address = addressParts.length > 0 ? addressParts.join(', ') : null;
+
+    res.status(200).json({
+      success: true,
+      data: {
+        pageData: {
+          coverImage: builderPage?.cover || business.coverImage || null,
+          logo: builderPage?.logo || business.logo || null,
+          name: business.businessName || null,
+          pageId: pageIdToUse.toString(),
+          businessId: business._id.toString(),
+          industry: business.industry || null,
+          address: address,
+          timeWidgetAdded: latestWidgetDate
+        },
+        widgets: newWidgets || []
+      }
+    });
+  } catch (error) {
+    if (error.name === 'CastError') {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid ID format'
+      });
+    }
     next(error);
   }
 }; 
