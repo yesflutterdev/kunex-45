@@ -2,6 +2,7 @@ const BuilderPage = require('../models/builderPage.model');
 const Widget = require('../models/widget.model');
 const BusinessProfile = require('../models/businessProfile.model');
 const FormSubmission = require('../models/formSubmission.model');
+const PageReport = require('../models/pagereport.model');
 const { uploadToCloudinary, deleteImage } = require('../utils/cloudinary');
 
 // Create a new builder page
@@ -1275,6 +1276,47 @@ exports.getCurrentHours = async (req, res, next) => {
         isCurrentlyOpen: currentHours.isOpen,
         serviceHoursType: page.serviceHours.type
       }
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+exports.reportPage = async (req, res, next) => {
+  try {
+    const userId = req.user.id;
+    const { pageId } = req.params;
+    const { category, description, attachment } = req.body;
+
+    if (!category || !description) {
+      return res.status(400).json({
+        success: false,
+        message: 'Category and description are required'
+      });
+    }
+
+    const page = await BuilderPage.findById(pageId);
+    if (!page) {
+      return res.status(404).json({
+        success: false,
+        message: 'Page not found'
+      });
+    }
+
+    const pageReport = new PageReport({
+      pageId,
+      userId,
+      category,
+      description,
+      attachment: attachment || null
+    });
+
+    await pageReport.save();
+
+    res.status(200).json({
+      success: true,
+      message: 'Page reported successfully',
+      data: { report: pageReport }
     });
   } catch (error) {
     next(error);

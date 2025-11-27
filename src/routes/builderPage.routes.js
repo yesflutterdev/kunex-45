@@ -29,7 +29,8 @@ const {
   addEventDate,
   updateEventDate,
   removeEventDate,
-  getCurrentHours
+  getCurrentHours,
+  reportPage
 } = builderPageController;
 
 /**
@@ -1394,5 +1395,83 @@ router.delete('/:pageId/service-hours/events/:eventId', auth, removeEventDate);
  *         description: Page not found
  */
 router.get('/:pageId/service-hours/current', auth, getCurrentHours);
+
+/**
+ * @swagger
+ * /api/builder/pages/{pageId}/report:
+ *   post:
+ *     summary: Report a page
+ *     tags: [Builder Pages]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: pageId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Page ID to report
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - category
+ *               - description
+ *             properties:
+ *               category:
+ *                 type: string
+ *                 description: Report category
+ *               description:
+ *                 type: string
+ *                 description: Detailed description of the report
+ *               attachment:
+ *                 type: string
+ *                 description: Optional attachment URL or string
+ *     responses:
+ *       201:
+ *         description: Page reported successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 message:
+ *                   type: string
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     report:
+ *                       type: object
+ *                       properties:
+ *                         _id:
+ *                           type: string
+ *                         pageId:
+ *                           type: string
+ *                         userId:
+ *                           type: string
+ *                         category:
+ *                           type: string
+ *                         description:
+ *                           type: string
+ *                         attachment:
+ *                           type: string
+ *                         status:
+ *                           type: string
+ *                         createdAt:
+ *                           type: string
+ *                           format: date-time
+ *       400:
+ *         description: Validation error - missing required fields
+ *       404:
+ *         description: Page not found
+ *       401:
+ *         description: Unauthorized
+ */
+router.post('/:pageId/report', auth, reportPage);
 
 module.exports = router; 
