@@ -118,12 +118,20 @@ exports.getPages = async (req, res, next) => {
     // Calculate pagination
     const skip = (parseInt(page) - 1) * parseInt(limit);
 
-    // Execute query
     const pages = await BuilderPage.find(query)
-      .populate('businessId', 'businessName username logo')
+      .populate('businessId', 'businessName username logo metrics.favoriteCount')
       .sort(sort)
       .skip(skip)
-      .limit(parseInt(limit));
+      .limit(parseInt(limit))
+      .lean();
+
+    const pagesWithFavorites = pages.map(page => {
+      const favoriteCount = page.businessId?.metrics?.favoriteCount || 0;
+      return {
+        ...page,
+        favoriteCount
+      };
+    });
 
     const totalPages = await BuilderPage.countDocuments(query);
     const totalItems = totalPages;
@@ -132,7 +140,7 @@ exports.getPages = async (req, res, next) => {
     res.status(200).json({
       success: true,
       data: {
-        pages,
+        pages: pagesWithFavorites,
         pagination: {
           current: parseInt(page),
           total: totalPagesCount,
@@ -153,7 +161,7 @@ exports.getPageById = async (req, res, next) => {
     const { pageId } = req.params;
 
     const page = await BuilderPage.findOne({ _id: pageId, userId })
-      .populate('businessId', 'businessName username logo')
+      .populate('businessId', 'businessName username logo metrics.favoriteCount')
       .populate('widgets');
 
     if (!page) {
@@ -163,13 +171,17 @@ exports.getPageById = async (req, res, next) => {
       });
     }
 
-    // Get widgets for this page
     const widgets = await Widget.find({ pageId });
+
+    const favoriteCount = page.businessId?.metrics?.favoriteCount || 0;
 
     res.status(200).json({
       success: true,
       data: {
-        page,
+        page: {
+          ...page.toObject(),
+          favoriteCount
+        },
         widgets,
         currentVersion: page.currentVersion
       }
@@ -199,7 +211,7 @@ exports.getPublicPage = async (req, res, next) => {
     }
 
     const page = await BuilderPage.findOne(query)
-      .populate('businessId', 'businessName username logo')
+      .populate('businessId', 'businessName username logo metrics.favoriteCount')
       .populate('widgets');
 
     if (!page) {
@@ -209,16 +221,19 @@ exports.getPublicPage = async (req, res, next) => {
       });
     }
 
-    // Increment view count
     await page.incrementViews();
 
-    // Get widgets for this page
     const widgets = await Widget.find({ pageId: page._id });
+
+    const favoriteCount = page.businessId?.metrics?.favoriteCount || 0;
 
     res.status(200).json({
       success: true,
       data: {
-        page,
+        page: {
+          ...page.toObject(),
+          favoriteCount
+        },
         widgets
       }
     });

@@ -362,11 +362,15 @@ favoriteSchema.statics.getFavoritesGroupedByType = async function (userId, optio
     } else {
       const widget = await mongoose.model('Widget').findById(favorite.widgetId).lean();
       if (widget) {
+        let userPage = null;
+        if (widget.pageId) {
+          userPage = await mongoose.model('BuilderPage').findById(widget.pageId).lean();
+        }
+
         if (favorite.type === 'Product' && favorite.productId) {
           // Find the specific product within the products array
           const products = widget.settings?.specific?.products || [];
           const specificProduct = products.find(p => p._id?.toString() === favorite.productId);
-          const userPage = await mongoose.model('BuilderPage').findById(widget.pageId).lean();
           if (specificProduct) {
             contentData = {
               _id: favorite.productId,
@@ -379,8 +383,8 @@ favoriteSchema.statics.getFavoritesGroupedByType = async function (userId, optio
               widgetName: widget.name,
               widgetType: widget.type,
               pageId: widget.pageId,
-              pageLogo: userPage.logo,
-              businessId: userPage.businessId
+              pageLogo: userPage?.logo || null,
+              businessId: userPage?.businessId || null
             };
           }
         } else {
@@ -393,8 +397,8 @@ favoriteSchema.statics.getFavoritesGroupedByType = async function (userId, optio
             layout: widget.layout,
             status: widget.status,
             pageId: widget.pageId,
-            pageLogo: userPage.logo,
-            businessId: userPage.businessId
+            pageLogo: userPage?.logo || null,
+            businessId: userPage?.businessId || null
           };
         }
       }
