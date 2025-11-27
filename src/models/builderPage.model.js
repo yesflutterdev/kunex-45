@@ -210,7 +210,7 @@ const builderPageSchema = new mongoose.Schema(
         primary: {
           type: String,
           match: /^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$/,
-          default: '#007bff'
+          default: '#222220'
         },
         secondary: {
           type: String,
@@ -220,7 +220,7 @@ const builderPageSchema = new mongoose.Schema(
         accent: {
           type: String,
           match: /^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$/,
-          default: '#28a745'
+          default: '#ffffffff'
         },
         background: {
           type: String,
@@ -230,7 +230,7 @@ const builderPageSchema = new mongoose.Schema(
         text: {
           type: String,
           match: /^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$/,
-          default: '#333333'
+          default: '#ffffffff'
         }
       },
       typography: {
@@ -470,7 +470,7 @@ const builderPageSchema = new mongoose.Schema(
         bgColor: {
           type: String,
           match: /^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$/,
-          default: '#007bff'
+          default: '#222220'
         },
         textColor: {
           type: String,
