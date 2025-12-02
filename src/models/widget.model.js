@@ -32,7 +32,7 @@ const widgetSchema = new mongoose.Schema(
         'custom_html', 'api_data', 'weather', 'clock', 'calculator',
         'custom_link', 'media', 'promotions', 'products', 'event', 'dropdown',
         'app_integration', 'google_reviews', 'google_maps', 'reservations',
-        'music_podcast', 'social_media_widgets', 'pdf'
+        'music_podcast', 'social_media_widgets', 'pdf', 'spotify', 'apple_music', 'apple_podcast', 'soundcloud'
       ],
       required: true
     },
@@ -389,6 +389,26 @@ const widgetSchema = new mongoose.Schema(
         musicPodcast: {
           podcastImage: { type: String, default: '' },
           musicPodcastUrl: { type: String, default: '' }
+        },
+
+        spotify: {
+          image: { type: String, default: '' },
+          url: { type: String, default: '' }
+        },
+
+        appleMusic: {
+          image: { type: String, default: '' },
+          url: { type: String, default: '' }
+        },
+
+        applePodcast: {
+          image: { type: String, default: '' },
+          url: { type: String, default: '' }
+        },
+
+        soundcloud: {
+          image: { type: String, default: '' },
+          url: { type: String, default: '' }
         },
 
         // Social Media Widgets fields
