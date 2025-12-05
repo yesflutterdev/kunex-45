@@ -220,7 +220,7 @@ const builderPageSchema = new mongoose.Schema(
         accent: {
           type: String,
           match: /^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$/,
-          default: '#ffffffff'
+          default: '#ffffff'
         },
         background: {
           type: String,
@@ -230,7 +230,7 @@ const builderPageSchema = new mongoose.Schema(
         text: {
           type: String,
           match: /^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$/,
-          default: '#ffffffff'
+          default: '#ffffff'
         }
       },
       typography: {
