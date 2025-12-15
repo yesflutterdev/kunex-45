@@ -11,7 +11,8 @@ const {
   validateTopPicks,
   validateOnTheRise,
   validateRecents,
-  validateRecentSearches
+  validateRecentSearches,
+  validateNewlyAdded
 } = require('../utils/exploreValidation');
 const {
   calculateDistancesWithGoogleMaps,
@@ -704,6 +705,136 @@ exports.getOnTheRise = async (req, res, next) => {
         searchCenter: longitude && latitude ? { latitude, longitude } : null,
         totalFound: businessesWithDetails.length,
         sortedBy: 'onTheRise'
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// Get newly added businesses (sorted by creation date)
+exports.getNewlyAdded = async (req, res, next) => {
+  try {
+    const { error, value } = validateNewlyAdded(req.query);
+    if (error) {
+      return res.status(400).json({
+        success: false,
+        message: 'Validation error',
+        errors: error.details.map(detail => detail.message),
+      });
+    }
+
+    const {
+      longitude,
+      latitude,
+      maxDistance = 25000,
+      limit = 15,
+      category,
+      priceRange
+    } = value;
+
+    // Build query for newly added businesses
+    const query = {};
+
+    // Apply filters
+    if (category) {
+      query.$or = [
+        { industry: new RegExp(category, 'i') },
+        { subIndustry: new RegExp(category, 'i') },
+        { industryTags: { $in: [new RegExp(category, 'i')] } }
+      ];
+    }
+
+    if (priceRange) {
+      if (Array.isArray(priceRange)) {
+        query.priceRange = { $in: priceRange };
+      } else {
+        query.priceRange = priceRange;
+      }
+    }
+
+    // Add geo-query if coordinates provided
+    if (longitude && latitude) {
+      query['location.coordinates'] = {
+        $near: {
+          $geometry: {
+            type: 'Point',
+            coordinates: [longitude, latitude]
+          },
+          $maxDistance: maxDistance
+        }
+      };
+    }
+
+    // Get businesses sorted by creation date (newest first)
+    const businesses = await BusinessProfile.find(query)
+      .populate('userId', 'firstName lastName')
+      .select('-__v')
+      .sort({ createdAt: -1 }) // Sort by creation date, newest first
+      .limit(limit * 2) // Get more to handle filters
+      .lean();
+
+    if (businesses.length === 0) {
+      return res.status(200).json({
+        success: true,
+        data: {
+          businesses: [],
+          searchCenter: longitude && latitude ? { latitude, longitude } : null,
+          totalFound: 0,
+          sortedBy: 'newlyAdded'
+        },
+      });
+    }
+
+    const topBusinesses = businesses.slice(0, limit);
+
+    // Calculate distances if coordinates provided
+    let distances = [];
+    if (longitude && latitude) {
+      const businessLocations = topBusinesses
+        .filter(business => business.location?.coordinates?.coordinates)
+        .map(business => ({
+          lat: business.location.coordinates.coordinates[1],
+          lng: business.location.coordinates.coordinates[0]
+        }));
+
+      if (businessLocations.length > 0) {
+        distances = await calculateDistancesWithGoogleMaps(latitude, longitude, businessLocations);
+      }
+    }
+
+    let distanceIndex = 0;
+    const businessesWithDetails = topBusinesses.map(business => {
+      let distance = null;
+      if (longitude && latitude && business.location?.coordinates?.coordinates) {
+        if (distances?.length > distanceIndex) {
+          distance = Math.round(distances[distanceIndex] * 100) / 100;
+        } else {
+          distance = Math.round(calculateHaversineDistance(
+            latitude,
+            longitude,
+            business.location.coordinates.coordinates[1],
+            business.location.coordinates.coordinates[0]
+          ) * 100) / 100;
+        }
+        distanceIndex++;
+      }
+
+      return {
+        ...business,
+        distance,
+        isCurrentlyOpen: checkIfCurrentlyOpen(business.businessHours),
+        distanceUnit: distance !== null ? 'km' : null
+      };
+    });
+
+    res.status(200).json({
+      success: true,
+      data: {
+        businesses: businessesWithDetails,
+        searchCenter: longitude && latitude ? { latitude, longitude } : null,
+        totalFound: businessesWithDetails.length,
+        sortedBy: 'newlyAdded'
       },
     });
   } catch (error) {
