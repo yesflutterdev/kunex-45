@@ -109,6 +109,10 @@ const builderPageSchema = new mongoose.Schema(
       type: String,
       trim: true,
     },
+    isShowPriceRange: {
+      type: Boolean,
+      default: true,
+    },
     location: {
       type: String,
       trim: true,
