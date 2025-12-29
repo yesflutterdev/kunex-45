@@ -3,6 +3,7 @@ const BuilderPage = require('../models/builderPage.model');
 const Folder = require('../models/folder.model');
 const User = require('../models/user.model');
 const { uploadToCloudinary, deleteImage, extractPublicId } = require('../utils/cloudinary');
+const { incrementIndustryViewCount, validateIndustryAndSubcategory } = require('../utils/industryUtils');
 const {
   validateCreateBusinessProfile,
   validateUpdateBusinessProfile,
@@ -38,7 +39,6 @@ exports.createProfile = async (req, res, next) => {
       });
     }
 
-    // Check username availability
     const existingUsername = await BusinessProfile.findOne({ username: value.username });
     if (existingUsername) {
       return res.status(400).json({
@@ -47,10 +47,36 @@ exports.createProfile = async (req, res, next) => {
       });
     }
 
-    // Create new profile
+    let industryName = null;
+    let subIndustryName = null;
+    
+    if (value.industryId) {
+      const industryValidation = await validateIndustryAndSubcategory(value.industryId, value.subIndustryId);
+      if (!industryValidation.valid) {
+        return res.status(400).json({
+          success: false,
+          message: industryValidation.error,
+        });
+      }
+      
+      industryName = industryValidation.industry.title;
+      
+      if (value.subIndustryId) {
+        const subcategory = industryValidation.industry.subcategories.find(
+          sub => sub.id === value.subIndustryId
+        );
+        if (subcategory) {
+          subIndustryName = subcategory.title;
+        }
+      }
+    }
+
     const profileData = {
       userId,
       ...value,
+      industry: industryName,
+      subIndustry: subIndustryName,
+      isBusiness: value.isBusiness !== undefined ? value.isBusiness : true,
     };
     
     // Ensure logo and coverImage are passed through
@@ -93,12 +119,13 @@ exports.createProfile = async (req, res, next) => {
       builderPage.folderId = defaultFolder._id;
       builderPage.title = value.businessName || builderPage.title;
       builderPage.description = value.description?.short || builderPage.description;
-      builderPage.industry = value.industry || builderPage.industry;
+      if (industryName !== null) builderPage.industry = industryName;
       builderPage.priceRange = value.priceRange || builderPage.priceRange;
       builderPage.location = value.location?.address || builderPage.location;
       builderPage.logo = value.logo || builderPage.logo;
       builderPage.username = value.username || builderPage.username;
       builderPage.cover = value.coverImage || builderPage.cover;
+      builderPage.isBusiness = profileData.isBusiness;
       await builderPage.save();
     } else {
       // Create new builder page
@@ -109,16 +136,17 @@ exports.createProfile = async (req, res, next) => {
         title: value.businessName || 'Untitled Page',
         slug: slug,
         description: value.description?.short || '',
-        industry: value.industry || '',
+        industry: industryName || '',
         priceRange: value.priceRange || '$',
         location: value.location?.address || '',
         logo: value.logo || '',
         username: value.username || '',
         cover: value.coverImage || '',
-        pageType: 'landing', // Default to landing page
+        isBusiness: profileData.isBusiness,
+        pageType: 'landing',
         template: {
           name: 'Business Landing Page',
-          category: 'business', // Map businessType to template category
+          category: 'business',
           version: '1.0'
         },
         isPublished: true
@@ -126,6 +154,10 @@ exports.createProfile = async (req, res, next) => {
 
       builderPage = new BuilderPage(builderPageData);
       await builderPage.save();
+      
+      if (value.industryId) {
+        await incrementIndustryViewCount(value.industryId, value.subIndustryId);
+      }
     }
 
     // Update profile with folderId
@@ -259,29 +291,52 @@ exports.updateProfile = async (req, res, next) => {
       }
     }
 
-    // Update profile
-    Object.assign(profile, value);
+    let industryName = null;
+    let subIndustryName = null;
+    
+    if (value.industryId) {
+      const industryValidation = await validateIndustryAndSubcategory(value.industryId, value.subIndustryId);
+      if (!industryValidation.valid) {
+        return res.status(400).json({
+          success: false,
+          message: industryValidation.error,
+        });
+      }
+      
+      industryName = industryValidation.industry.title;
+      
+      if (value.subIndustryId) {
+        const subcategory = industryValidation.industry.subcategories.find(
+          sub => sub.id === value.subIndustryId
+        );
+        if (subcategory) {
+          subIndustryName = subcategory.title;
+        }
+      }
+      
+      profile.industry = industryName;
+      profile.subIndustry = subIndustryName;
+    }
+
     await profile.save();
 
-    // Sync to BuilderPage if profile has _id
     const builderPage = await BuilderPage.findOne({ businessId: profile._id });
     if (builderPage) {
       const syncData = {};
       
-      // Always sync all relevant fields to keep them in sync
       syncData.title = profile.businessName;
       syncData.username = profile.username;
       syncData.logo = profile.logo;
       syncData.cover = profile.coverImage;
       syncData.priceRange = profile.priceRange;
-      syncData.industry = profile.industry;
+      if (industryName !== null) syncData.industry = industryName;
+      syncData.isBusiness = profile.isBusiness;
       syncData.folderId = profile.folderId;
       
       if (profile.location?.address) {
         syncData.location = profile.location.address;
       }
       
-      // Update builder page
       Object.assign(builderPage, syncData);
       await builderPage.save();
     }
@@ -302,7 +357,6 @@ exports.updateProfile = async (req, res, next) => {
   }
 };
 
-// Get business profiles by allowed industry via URL param
 exports.getProfilesByIndustryParam = async (req, res, next) => {
   try {
     const allowedIndustries = [

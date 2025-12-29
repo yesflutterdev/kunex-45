@@ -100,10 +100,24 @@ const builderPageSchema = new mongoose.Schema(
       trim: true,
       maxlength: 140
     },
+    industryId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Industry'
+    },
+    subIndustryId: {
+      type: String,
+      trim: true,
+      default: null
+    },
     industry: {
       type: String,
       trim: true,
       maxlength: 100
+    },
+    isBusiness: {
+      type: Boolean,
+      default: true,
+      required: true
     },
     priceRange: {
       type: String,
@@ -759,6 +773,7 @@ const builderPageSchema = new mongoose.Schema(
 // Compound indexes
 builderPageSchema.index({ userId: 1, slug: 1 }, { unique: true });
 builderPageSchema.index({ businessId: 1, slug: 1 });
+builderPageSchema.index({ industryId: 1 });
 builderPageSchema.index({ pageType: 1, 'settings.isPublished': 1 });
 builderPageSchema.index({ 'template.category': 1 });
 builderPageSchema.index({ publishedAt: -1 });

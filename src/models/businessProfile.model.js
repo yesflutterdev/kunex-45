@@ -64,11 +64,25 @@ const businessProfileSchema = new mongoose.Schema(
         'Others'
       ]
     },
+    industryId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Industry'
+    },
+    subIndustryId: {
+      type: String,
+      trim: true,
+      default: null
+    },
+    // Legacy field - kept for backward compatibility during migration
     industry: {
       type: String,
-      // required: true,
       trim: true,
       maxlength: 100
+    },
+    isBusiness: {
+      type: Boolean,
+      default: true,
+      required: true
     },
     subIndustry: {
       type: String,
@@ -336,11 +350,13 @@ businessProfileSchema.index({ 'location.coordinates': '2dsphere' });
 businessProfileSchema.index({
   'location.coordinates': '2dsphere',
   businessType: 1,
-  industry: 1,
+  industryId: 1,
   'metrics.ratingAverage': -1
 });
 
 businessProfileSchema.index({ businessType: 1 });
+businessProfileSchema.index({ industryId: 1 });
+// Legacy index - keep for backward compatibility
 businessProfileSchema.index({ industry: 1 });
 businessProfileSchema.index({ priceRange: 1 });
 businessProfileSchema.index({ 'metrics.ratingAverage': 1 });
@@ -352,7 +368,7 @@ businessProfileSchema.index({
   businessName: 'text',
   'description.short': 'text',
   'description.full': 'text',
-  industry: 'text',
+  industry: 'text', // Legacy - keep for backward compatibility
   subIndustry: 'text',
   industryTags: 'text'
 });
@@ -363,7 +379,7 @@ businessProfileSchema.methods.calculateCompletionPercentage = function () {
     'businessName',
     'username',
     'businessType',
-    'industry',
+    'industryId', // Updated to use industryId instead of industry string
     'description.short',
     'contactInfo.email',
     'contactInfo.phone'

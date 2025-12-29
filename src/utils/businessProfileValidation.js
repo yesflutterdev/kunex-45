@@ -41,8 +41,9 @@ exports.validateCreateBusinessProfile = (data) => {
         'Others'
       )
       .allow(''),
-    industry: Joi.string().trim().max(100).required(),
-    subIndustry: Joi.string().trim().max(100).allow(''),
+    industryId: Joi.string().hex().length(24).required(),
+    subIndustryId: Joi.string().trim().max(100).allow('', null),
+    isBusiness: Joi.boolean().default(true),
     industryTags: Joi.array().items(Joi.string().trim().max(50)).max(10),
     description: Joi.object({
       short: Joi.string().trim().max(200).allow(''),
@@ -132,8 +133,9 @@ exports.validateUpdateBusinessProfile = (data) => {
         'Others'
       )
       .allow(''),
-    industry: Joi.string().trim().max(100),
-    subIndustry: Joi.string().trim().max(100).allow(''),
+    industryId: Joi.string().hex().length(24),
+    subIndustryId: Joi.string().trim().max(100).allow('', null),
+    isBusiness: Joi.boolean(),
     industryTags: Joi.array().items(Joi.string().trim().max(50)).max(10),
     description: Joi.object({
       short: Joi.string().trim().max(200).allow(''),

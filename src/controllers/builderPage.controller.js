@@ -4,6 +4,7 @@ const BusinessProfile = require('../models/businessProfile.model');
 const FormSubmission = require('../models/formSubmission.model');
 const PageReport = require('../models/pagereport.model');
 const { uploadToCloudinary, deleteImage } = require('../utils/cloudinary');
+const { incrementIndustryViewCount, validateIndustryAndSubcategory } = require('../utils/industryUtils');
 
 // Create a new builder page
 exports.createPage = async (req, res, next) => {
@@ -15,10 +16,11 @@ exports.createPage = async (req, res, next) => {
       description,
       pageType,
       template,
-      businessId
+      businessId,
+      industryId,
+      subIndustryId
     } = req.body;
 
-    // Validate required fields
     if (!title || !slug || !pageType || !template) {
       return res.status(400).json({
         success: false,
@@ -26,7 +28,6 @@ exports.createPage = async (req, res, next) => {
       });
     }
 
-    // Check if slug is unique for this user
     const existingPage = await BuilderPage.findOne({ userId, slug });
     if (existingPage) {
       return res.status(400).json({
@@ -35,7 +36,6 @@ exports.createPage = async (req, res, next) => {
       });
     }
 
-    // If businessId is provided, verify ownership
     if (businessId) {
       const business = await BusinessProfile.findOne({ _id: businessId, userId });
       if (!business) {
@@ -46,7 +46,20 @@ exports.createPage = async (req, res, next) => {
       }
     }
 
-    // Create page data
+    let industryName = null;
+    
+    if (industryId) {
+      const industryValidation = await validateIndustryAndSubcategory(industryId, subIndustryId);
+      if (!industryValidation.valid) {
+        return res.status(400).json({
+          success: false,
+          message: industryValidation.error,
+        });
+      }
+      
+      industryName = industryValidation.industry.title;
+    }
+
     const pageData = {
       userId,
       title,
@@ -54,11 +67,16 @@ exports.createPage = async (req, res, next) => {
       description,
       pageType,
       template,
-      businessId: businessId || null
+      businessId: businessId || null,
+      industry: industryName || ''
     };
 
     const page = new BuilderPage(pageData);
     await page.save();
+
+    if (industryId) {
+      await incrementIndustryViewCount(industryId, subIndustryId);
+    }
 
     res.status(201).json({
       success: true,
@@ -272,12 +290,26 @@ exports.updatePage = async (req, res, next) => {
       }
     }
 
-    // Create version before updating if significant changes
+    if (updateData.industryId) {
+      const industryValidation = await validateIndustryAndSubcategory(updateData.industryId, updateData.subIndustryId);
+      if (!industryValidation.valid) {
+        return res.status(400).json({
+          success: false,
+          message: industryValidation.error,
+        });
+      }
+      
+      updateData.industry = industryValidation.industry.title;
+      delete updateData.industryId;
+      if (updateData.subIndustryId) {
+        delete updateData.subIndustryId;
+      }
+    }
+
     if (updateData.layout || updateData.styling || updateData.seo) {
       page.createVersion('Page content updated');
     }
 
-    // Update page
     Object.assign(page, updateData);
     await page.save();
 
@@ -291,6 +323,8 @@ exports.updatePage = async (req, res, next) => {
       if (updateData.logo !== undefined) syncData.logo = updateData.logo;
       if (updateData.cover !== undefined) syncData.coverImage = updateData.cover;
       if (updateData.priceRange !== undefined) syncData.priceRange = updateData.priceRange;
+      if (updateData.industry !== undefined) syncData.industry = updateData.industry;
+      if (updateData.isBusiness !== undefined) syncData.isBusiness = updateData.isBusiness;
       if (updateData.folderId !== undefined) syncData.folderId = updateData.folderId;
       if (updateData.location) {
         // Convert location string to object
