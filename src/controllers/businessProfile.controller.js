@@ -119,7 +119,9 @@ exports.createProfile = async (req, res, next) => {
       builderPage.folderId = defaultFolder._id;
       builderPage.title = value.businessName || builderPage.title;
       builderPage.description = value.description?.short || builderPage.description;
+      if (value.industryId) builderPage.industryId = value.industryId;
       if (industryName !== null) builderPage.industry = industryName;
+      if (value.subIndustryId) builderPage.subIndustryId = value.subIndustryId;
       builderPage.priceRange = value.priceRange || builderPage.priceRange;
       builderPage.location = value.location?.address || builderPage.location;
       builderPage.logo = value.logo || builderPage.logo;
@@ -136,7 +138,9 @@ exports.createProfile = async (req, res, next) => {
         title: value.businessName || 'Untitled Page',
         slug: slug,
         description: value.description?.short || '',
+        industryId: value.industryId || null,
         industry: industryName || '',
+        subIndustryId: value.subIndustryId || null,
         priceRange: value.priceRange || '$',
         location: value.location?.address || '',
         logo: value.logo || '',
@@ -329,7 +333,9 @@ exports.updateProfile = async (req, res, next) => {
       syncData.logo = profile.logo;
       syncData.cover = profile.coverImage;
       syncData.priceRange = profile.priceRange;
+      if (value.industryId) syncData.industryId = value.industryId;
       if (industryName !== null) syncData.industry = industryName;
+      if (value.subIndustryId !== undefined) syncData.subIndustryId = value.subIndustryId;
       syncData.isBusiness = profile.isBusiness;
       syncData.folderId = profile.folderId;
       

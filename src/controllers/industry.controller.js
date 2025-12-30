@@ -136,3 +136,43 @@ exports.searchIndustries = async (req, res, next) => {
   }
 };
 
+/**
+ * Get trending industries (top 6 by viewCount for business and professional)
+ * Only includes industries with viewCount > 0, sorted by viewCount descending
+ */
+exports.getTrendingIndustries = async (req, res, next) => {
+  try {
+    // Get top 6 business industries (including 'both' type) with viewCount > 0, sorted by viewCount
+    const businessIndustries = await Industry.find({
+      type: { $in: ['business', 'both'] },
+      isActive: true,
+      viewCount: { $gt: 0 }
+    })
+      .select('_id title type subcategories viewCount image isActive')
+      .sort({ viewCount: -1, title: 1 })
+      .limit(6)
+      .lean();
+
+    // Get top 6 professional/individual industries (including 'both' type) with viewCount > 0, sorted by viewCount
+    const professionalIndustries = await Industry.find({
+      type: { $in: ['individual', 'both'] },
+      isActive: true,
+      viewCount: { $gt: 0 }
+    })
+      .select('_id title type subcategories viewCount image isActive')
+      .sort({ viewCount: -1, title: 1 })
+      .limit(6)
+      .lean();
+
+    res.status(200).json({
+      success: true,
+      data: {
+        business: businessIndustries,
+        professional: professionalIndustries
+      }
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
