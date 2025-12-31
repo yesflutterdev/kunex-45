@@ -47,6 +47,7 @@ exports.createPage = async (req, res, next) => {
     }
 
     let industryName = null;
+    let subIndustryName = null;
     
     if (industryId) {
       const industryValidation = await validateIndustryAndSubcategory(industryId, subIndustryId);
@@ -58,6 +59,12 @@ exports.createPage = async (req, res, next) => {
       }
       
       industryName = industryValidation.industry.title;
+      if (subIndustryId) {
+        const subcategory = industryValidation.industry.subcategories.find(sub => sub.id === subIndustryId);
+        if (subcategory) {
+          subIndustryName = subcategory.title;
+        }
+      }
     }
 
     const pageData = {
@@ -68,7 +75,10 @@ exports.createPage = async (req, res, next) => {
       pageType,
       template,
       businessId: businessId || null,
-      industry: industryName || ''
+      industry: industryName || '',
+      subIndustry: subIndustryName || null,
+      industryId: industryId || null,
+      subIndustryId: subIndustryId || null
     };
 
     const page = new BuilderPage(pageData);
@@ -290,19 +300,61 @@ exports.updatePage = async (req, res, next) => {
       }
     }
 
-    if (updateData.industryId) {
-      const industryValidation = await validateIndustryAndSubcategory(updateData.industryId, updateData.subIndustryId);
-      if (!industryValidation.valid) {
+    // Handle industry updates
+    if (updateData.industryId !== undefined) {
+      if (updateData.industryId === null) {
+        // Clear industry fields
+        updateData.industry = '';
+        updateData.subIndustry = null;
+        updateData.subIndustryId = null;
+      } else {
+        // Validate and set industry fields
+        const industryValidation = await validateIndustryAndSubcategory(updateData.industryId, updateData.subIndustryId);
+        if (!industryValidation.valid) {
+          return res.status(400).json({
+            success: false,
+            message: industryValidation.error,
+          });
+        }
+        
+        updateData.industry = industryValidation.industry.title;
+        // Keep industryId and subIndustryId - don't delete them
+        if (updateData.subIndustryId) {
+          const subcategory = industryValidation.industry.subcategories.find(sub => sub.id === updateData.subIndustryId);
+          if (subcategory) {
+            updateData.subIndustry = subcategory.title;
+          } else {
+            updateData.subIndustry = null;
+          }
+        } else {
+          updateData.subIndustry = null;
+        }
+      }
+    } else if (updateData.subIndustryId !== undefined) {
+      // If only subIndustryId is being updated, validate against existing industryId
+      if (updateData.subIndustryId === null) {
+        // Clear subIndustry
+        updateData.subIndustry = null;
+      } else if (page.industryId) {
+        // Validate subIndustryId against existing industryId
+        const industryValidation = await validateIndustryAndSubcategory(page.industryId, updateData.subIndustryId);
+        if (!industryValidation.valid) {
+          return res.status(400).json({
+            success: false,
+            message: industryValidation.error,
+          });
+        }
+        const subcategory = industryValidation.industry.subcategories.find(sub => sub.id === updateData.subIndustryId);
+        if (subcategory) {
+          updateData.subIndustry = subcategory.title;
+        } else {
+          updateData.subIndustry = null;
+        }
+      } else {
         return res.status(400).json({
           success: false,
-          message: industryValidation.error,
+          message: 'Cannot set subIndustryId without industryId',
         });
-      }
-      
-      updateData.industry = industryValidation.industry.title;
-      delete updateData.industryId;
-      if (updateData.subIndustryId) {
-        delete updateData.subIndustryId;
       }
     }
 
@@ -324,6 +376,9 @@ exports.updatePage = async (req, res, next) => {
       if (updateData.cover !== undefined) syncData.coverImage = updateData.cover;
       if (updateData.priceRange !== undefined) syncData.priceRange = updateData.priceRange;
       if (updateData.industry !== undefined) syncData.industry = updateData.industry;
+      if (updateData.subIndustry !== undefined) syncData.subIndustry = updateData.subIndustry;
+      if (updateData.industryId !== undefined) syncData.industryId = updateData.industryId;
+      if (updateData.subIndustryId !== undefined) syncData.subIndustryId = updateData.subIndustryId;
       if (updateData.isBusiness !== undefined) syncData.isBusiness = updateData.isBusiness;
       if (updateData.folderId !== undefined) syncData.folderId = updateData.folderId;
       if (updateData.location) {

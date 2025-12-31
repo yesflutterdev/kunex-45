@@ -295,32 +295,89 @@ exports.updateProfile = async (req, res, next) => {
       }
     }
 
+    // Handle industry updates
     let industryName = null;
     let subIndustryName = null;
     
-    if (value.industryId) {
-      const industryValidation = await validateIndustryAndSubcategory(value.industryId, value.subIndustryId);
-      if (!industryValidation.valid) {
-        return res.status(400).json({
-          success: false,
-          message: industryValidation.error,
-        });
+    if (value.industryId !== undefined) {
+      if (value.industryId === null) {
+        // Clear industry fields
+        industryName = '';
+        subIndustryName = null;
+        profile.industry = '';
+        profile.subIndustry = null;
+        profile.industryId = null;
+        profile.subIndustryId = null;
+      } else {
+        // Validate and set industry fields
+        const industryValidation = await validateIndustryAndSubcategory(value.industryId, value.subIndustryId);
+        if (!industryValidation.valid) {
+          return res.status(400).json({
+            success: false,
+            message: industryValidation.error,
+          });
+        }
+        
+        industryName = industryValidation.industry.title;
+        profile.industryId = value.industryId;
+        
+        if (value.subIndustryId) {
+          const subcategory = industryValidation.industry.subcategories.find(
+            sub => sub.id === value.subIndustryId
+          );
+          if (subcategory) {
+            subIndustryName = subcategory.title;
+            profile.subIndustryId = value.subIndustryId;
+          } else {
+            subIndustryName = null;
+            profile.subIndustryId = null;
+          }
+        } else {
+          subIndustryName = null;
+          profile.subIndustryId = null;
+        }
+        
+        profile.industry = industryName;
+        profile.subIndustry = subIndustryName;
       }
-      
-      industryName = industryValidation.industry.title;
-      
-      if (value.subIndustryId) {
+    } else if (value.subIndustryId !== undefined) {
+      // If only subIndustryId is being updated, validate against existing industryId
+      if (value.subIndustryId === null) {
+        // Clear subIndustry
+        profile.subIndustry = null;
+        profile.subIndustryId = null;
+      } else if (profile.industryId) {
+        // Validate subIndustryId against existing industryId
+        const industryValidation = await validateIndustryAndSubcategory(profile.industryId, value.subIndustryId);
+        if (!industryValidation.valid) {
+          return res.status(400).json({
+            success: false,
+            message: industryValidation.error,
+          });
+        }
         const subcategory = industryValidation.industry.subcategories.find(
           sub => sub.id === value.subIndustryId
         );
         if (subcategory) {
-          subIndustryName = subcategory.title;
+          profile.subIndustry = subcategory.title;
+          profile.subIndustryId = value.subIndustryId;
+        } else {
+          profile.subIndustry = null;
+          profile.subIndustryId = null;
         }
+      } else {
+        return res.status(400).json({
+          success: false,
+          message: 'Cannot set subIndustryId without industryId',
+        });
       }
-      
-      profile.industry = industryName;
-      profile.subIndustry = subIndustryName;
     }
+
+    // Apply all other updates from value to profile (excluding industry fields which are already handled)
+    const { industryId, subIndustryId, ...otherUpdates } = value;
+    Object.assign(profile, otherUpdates);
+    
+    // Industry fields are already set above, so we don't need to override them
 
     await profile.save();
 
@@ -333,9 +390,12 @@ exports.updateProfile = async (req, res, next) => {
       syncData.logo = profile.logo;
       syncData.cover = profile.coverImage;
       syncData.priceRange = profile.priceRange;
-      if (value.industryId) syncData.industryId = value.industryId;
-      if (industryName !== null) syncData.industry = industryName;
-      if (value.subIndustryId !== undefined) syncData.subIndustryId = value.subIndustryId;
+      if (value.industryId !== undefined || value.subIndustryId !== undefined) {
+        syncData.industryId = profile.industryId;
+        syncData.industry = profile.industry;
+        syncData.subIndustry = profile.subIndustry;
+        syncData.subIndustryId = profile.subIndustryId;
+      }
       syncData.isBusiness = profile.isBusiness;
       syncData.folderId = profile.folderId;
       
@@ -365,27 +425,11 @@ exports.updateProfile = async (req, res, next) => {
 
 exports.getProfilesByIndustryParam = async (req, res, next) => {
   try {
-    const allowedIndustries = [
-      'Restaurant',
-      'Photography & Videography',
-      'Pet Grooming',
-      'Hair Salon',
-      'Business man'
-    ];
-
     const { industry } = req.params;
     if (!industry || typeof industry !== 'string') {
       return res.status(400).json({
         success: false,
         message: 'Industry parameter is required'
-      });
-    }
-
-    const matchIndustry = allowedIndustries.find(i => i.toLowerCase() === industry.toLowerCase());
-    if (!matchIndustry) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid industry. Allowed industries are: Restaurant, Photography & Videography, Pet Grooming, Hair Salon, Business man'
       });
     }
 
@@ -396,13 +440,75 @@ exports.getProfilesByIndustryParam = async (req, res, next) => {
       price,
       latitude,
       longitude,
-      maxDistance = 25000
+      maxDistance = 25000,
+      subIndustryId
     } = req.query;
 
-    const escaped = matchIndustry.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const query = {
-      industry: { $regex: `^${escaped}$`, $options: 'i' }
-    };
+    // Check if industry param is a MongoDB ObjectId (24 hex characters)
+    const isObjectId = /^[0-9a-fA-F]{24}$/.test(industry);
+    let industryId = null;
+    let industryName = null;
+    let query = {};
+
+    if (isObjectId) {
+      // Industry param is an industryId (ObjectId)
+      const Industry = require('../models/industry.model');
+      const industryDoc = await Industry.findById(industry);
+      
+      if (!industryDoc || !industryDoc.isActive) {
+        return res.status(404).json({
+          success: false,
+          message: 'Industry not found or inactive'
+        });
+      }
+      
+      industryId = industryDoc._id;
+      industryName = industryDoc.title;
+      query.industryId = industryId;
+      
+      // If subIndustryId is provided, validate it belongs to this industry
+      if (subIndustryId) {
+        const subcategory = industryDoc.subcategories.find(sub => sub.id === subIndustryId);
+        if (!subcategory) {
+          return res.status(400).json({
+            success: false,
+            message: `Subcategory "${subIndustryId}" not found in industry "${industryDoc.title}"`
+          });
+        }
+        query.subIndustryId = subIndustryId;
+      }
+    } else {
+      // Industry param is a name (legacy support)
+      // Try to find industry by name
+      const Industry = require('../models/industry.model');
+      const industryDoc = await Industry.findOne({
+        title: { $regex: `^${industry}$`, $options: 'i' },
+        isActive: true
+      });
+      
+      if (!industryDoc) {
+        return res.status(404).json({
+          success: false,
+          message: 'Industry not found. Please use industry ID or check the industry name.'
+        });
+      }
+      
+      industryId = industryDoc._id;
+      industryName = industryDoc.title;
+      query.industryId = industryId;
+      
+      // If subIndustryId is provided, validate it belongs to this industry
+      if (subIndustryId) {
+        const subcategory = industryDoc.subcategories.find(sub => sub.id === subIndustryId);
+        if (!subcategory) {
+          return res.status(400).json({
+            success: false,
+            message: `Subcategory "${subIndustryId}" not found in industry "${industryDoc.title}"`
+          });
+        }
+        query.subIndustryId = subIndustryId;
+      }
+    }
 
     if (openNow === 'true' || openNow === true) {
       const now = new Date();
@@ -457,7 +563,7 @@ exports.getProfilesByIndustryParam = async (req, res, next) => {
       const ratingStats = await BusinessProfile.aggregate([
         {
           $match: {
-            industry: { $regex: `^${escaped}$`, $options: 'i' }
+            industryId: industryId
           }
         },
         {
@@ -507,7 +613,7 @@ exports.getProfilesByIndustryParam = async (req, res, next) => {
       }
     }
 
-    const selectFields = '_id userId businessName username logo coverImage industry priceRange location.address location.city location.state location.country location.coordinates completionPercentage builderPageId folderId createdAt updatedAt metrics.ratingAverage metrics.ratingCount';
+    const selectFields = '_id userId businessName username logo coverImage industry subIndustry industryId subIndustryId priceRange location.address location.city location.state location.country location.coordinates completionPercentage builderPageId folderId createdAt updatedAt metrics.ratingAverage metrics.ratingCount';
 
     const sort = {};
     if (nearby === 'true' || nearby === true) {
