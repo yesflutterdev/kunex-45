@@ -44,7 +44,8 @@ exports.validateTopPicks = (data) => {
     priceRange: Joi.alternatives().try(
       Joi.string().valid('$', '$$', '$$$', '$$$$'),
       Joi.array().items(Joi.string().valid('$', '$$', '$$$', '$$$$'))
-    )
+    ),
+    openedStatus: Joi.string().valid('open', 'closed', 'any').default('any')
   }).and('longitude', 'latitude'); // Both coordinates required if one is provided
 
   return schema.validate(data, { abortEarly: false });
@@ -62,7 +63,8 @@ exports.validateOnTheRise = (data) => {
       Joi.string().valid('$', '$$', '$$$', '$$$$'),
       Joi.array().items(Joi.string().valid('$', '$$', '$$$', '$$$$'))
     ),
-    daysBack: Joi.number().min(1).max(365).default(30) // Look back 1 day to 1 year
+    daysBack: Joi.number().min(1).max(365).default(30), // Look back 1 day to 1 year
+    openedStatus: Joi.string().valid('open', 'closed', 'any').default('any')
   }).and('longitude', 'latitude'); // Both coordinates required if one is provided
 
   return schema.validate(data, { abortEarly: false });
@@ -260,7 +262,8 @@ exports.validateRecents = (data) => {
     priceRange: Joi.alternatives().try(
       Joi.string().valid('$', '$$', '$$$', '$$$$'),
       Joi.array().items(Joi.string().valid('$', '$$', '$$$', '$$$$'))
-    )
+    ),
+    openedStatus: Joi.string().valid('open', 'closed', 'any').default('any')
   }).and('longitude', 'latitude'); // Both coordinates required if one is provided
 
   return schema.validate(data, { abortEarly: false });

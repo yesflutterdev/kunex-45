@@ -242,6 +242,7 @@ exports.validateSearchBusinessProfiles = (data) => {
     ),
     minRating: Joi.number().min(0).max(5).allow(''),
     isOnlineOnly: Joi.boolean().allow(''),
+    openedStatus: Joi.string().valid('open', 'closed', 'any').default('any'),
     page: Joi.number().integer().min(1).default(1),
     limit: Joi.number().integer().min(1).max(50).default(10),
     sortBy: Joi.string()
@@ -274,7 +275,8 @@ exports.validateLocationSearch = (data) => {
       .allow(''),
     industry: Joi.string().trim().max(100).allow(''),
     priceRange: Joi.string().valid('$', '$$', '$$$', '$$$$').allow(''),
-    minRating: Joi.number().min(0).max(5).allow('')
+    minRating: Joi.number().min(0).max(5).allow(''),
+    openedStatus: Joi.string().valid('open', 'closed', 'any').default('any')
   });
 
   return schema.validate(data);

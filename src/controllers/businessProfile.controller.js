@@ -898,6 +898,7 @@ exports.searchProfiles = async (req, res, next) => {
       features,
       minRating,
       isOnlineOnly,
+      openedStatus,
       page,
       limit,
       sortBy,
@@ -952,6 +953,26 @@ exports.searchProfiles = async (req, res, next) => {
     // Filter by minimum rating
     if (minRating) {
       query['metrics.ratingAverage'] = { $gte: minRating };
+    }
+
+    // Apply "open now" filter
+    if (openedStatus === 'open') {
+      const now = new Date();
+      const currentDay = now.toLocaleDateString('en-US', { weekday: 'long' });
+      const currentTime = now.toTimeString().slice(0, 5);
+
+      query.businessHours = {
+        $elemMatch: {
+          day: currentDay,
+          isClosed: false,
+          $and: [
+            { open: { $ne: "" } },
+            { close: { $ne: "" } },
+            { open: { $lte: currentTime } },
+            { close: { $gte: currentTime } }
+          ]
+        }
+      };
     }
 
     // Build sort object
@@ -1022,7 +1043,8 @@ exports.findNearbyProfiles = async (req, res, next) => {
       businessType,
       industry,
       priceRange,
-      minRating
+      minRating,
+      openedStatus
     } = value;
 
     // Build query
@@ -1050,6 +1072,26 @@ exports.findNearbyProfiles = async (req, res, next) => {
     }
     if (minRating) {
       query['metrics.ratingAverage'] = { $gte: minRating };
+    }
+
+    // Apply "open now" filter
+    if (openedStatus === 'open') {
+      const now = new Date();
+      const currentDay = now.toLocaleDateString('en-US', { weekday: 'long' });
+      const currentTime = now.toTimeString().slice(0, 5);
+
+      query.businessHours = {
+        $elemMatch: {
+          day: currentDay,
+          isClosed: false,
+          $and: [
+            { open: { $ne: "" } },
+            { close: { $ne: "" } },
+            { open: { $lte: currentTime } },
+            { close: { $gte: currentTime } }
+          ]
+        }
+      };
     }
 
     // Execute query

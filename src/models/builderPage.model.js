@@ -758,6 +758,11 @@ const builderPageSchema = new mongoose.Schema(
         default: 0,
         min: 0,
         max: 100
+      },
+      favoriteCount: {
+        type: Number,
+        default: 0,
+        min: 0
       }
     },
     publishedAt: Date,

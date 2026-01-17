@@ -87,12 +87,23 @@ exports.addFavorite = async (req, res, next) => {
     if (existingFavorite) {
       await existingFavorite.deleteOne();
       
-      // Decrement favoriteCount for BusinessProfile if it's a Page type
+      // Decrement favoriteCount for BusinessProfile and BuilderPage if it's a Page type
       if (type === 'Page' && content && content._isBusinessProfile) {
         const businessProfile = await BusinessProfile.findById(widgetId);
-        if (businessProfile && businessProfile.metrics.favoriteCount > 0) {
-          businessProfile.metrics.favoriteCount -= 1;
-          await businessProfile.save();
+        if (businessProfile) {
+          if (businessProfile.metrics.favoriteCount > 0) {
+            businessProfile.metrics.favoriteCount -= 1;
+            await businessProfile.save();
+          }
+          
+          // Sync with BuilderPage if it exists
+          if (businessProfile.builderPageId) {
+            const builderPage = await BuilderPage.findById(businessProfile.builderPageId);
+            if (builderPage && builderPage.analytics.favoriteCount > 0) {
+              builderPage.analytics.favoriteCount -= 1;
+              await builderPage.save();
+            }
+          }
         }
       }
       
@@ -117,8 +128,10 @@ exports.addFavorite = async (req, res, next) => {
         });
       }
     } else {
+      // getDefaultFolder now automatically creates one if it doesn't exist
       targetFolder = await Folder.getDefaultFolder(userId);
       if (!targetFolder) {
+        // Fallback: try to create manually if getDefaultFolder failed
         targetFolder = await Folder.createDefaultFolder(userId);
       }
     }
@@ -142,12 +155,21 @@ exports.addFavorite = async (req, res, next) => {
 
     await favorite.save();
 
-    // Increment favoriteCount for BusinessProfile if it's a Page type
+    // Increment favoriteCount for BusinessProfile and BuilderPage if it's a Page type
     if (type === 'Page' && content && content._isBusinessProfile) {
       const businessProfile = await BusinessProfile.findById(widgetId);
       if (businessProfile) {
         businessProfile.metrics.favoriteCount += 1;
         await businessProfile.save();
+        
+        // Sync with BuilderPage if it exists
+        if (businessProfile.builderPageId) {
+          const builderPage = await BuilderPage.findById(businessProfile.builderPageId);
+          if (builderPage) {
+            builderPage.analytics.favoriteCount += 1;
+            await builderPage.save();
+          }
+        }
       }
     }
 
@@ -597,12 +619,23 @@ exports.removeFavorite = async (req, res, next) => {
       });
     }
 
-    // Decrement favoriteCount for BusinessProfile if it's a Page type
+    // Decrement favoriteCount for BusinessProfile and BuilderPage if it's a Page type
     if (favorite.type === 'Page' && favorite.widgetId) {
       const businessProfile = await BusinessProfile.findById(favorite.widgetId);
-      if (businessProfile && businessProfile.metrics.favoriteCount > 0) {
-        businessProfile.metrics.favoriteCount -= 1;
-        await businessProfile.save();
+      if (businessProfile) {
+        if (businessProfile.metrics.favoriteCount > 0) {
+          businessProfile.metrics.favoriteCount -= 1;
+          await businessProfile.save();
+        }
+        
+        // Sync with BuilderPage if it exists
+        if (businessProfile.builderPageId) {
+          const builderPage = await BuilderPage.findById(businessProfile.builderPageId);
+          if (builderPage && builderPage.analytics.favoriteCount > 0) {
+            builderPage.analytics.favoriteCount -= 1;
+            await builderPage.save();
+          }
+        }
       }
     }
 

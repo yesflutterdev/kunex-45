@@ -120,9 +120,23 @@ folderSchema.statics.getUserFolders = function(userId, options = {}) {
     .lean();
 };
 
-// Static method to get default folder for user
-folderSchema.statics.getDefaultFolder = function(userId) {
-  return this.findOne({ userId, isDefault: true });
+// Static method to get default folder for user (creates one if it doesn't exist)
+folderSchema.statics.getDefaultFolder = async function(userId) {
+  let defaultFolder = await this.findOne({ userId, isDefault: true });
+  
+  // If no default folder exists, create one
+  if (!defaultFolder) {
+    try {
+      defaultFolder = await this.createDefaultFolder(userId);
+      console.log(`[Folder] Created default folder for user: ${userId}`);
+    } catch (error) {
+      console.error(`[Folder] Error creating default folder for user ${userId}:`, error);
+      // If creation fails (e.g., duplicate name), try to find it again
+      defaultFolder = await this.findOne({ userId, isDefault: true });
+    }
+  }
+  
+  return defaultFolder;
 };
 
 // Static method to create default folder for new user
@@ -231,6 +245,7 @@ folderSchema.pre('deleteOne', { document: true, query: false }, async function(n
   try {
     // Move all favorites from this folder to default folder
     const Favorite = mongoose.model('Favorite');
+    // getDefaultFolder is now async and will create one if it doesn't exist
     const defaultFolder = await this.constructor.getDefaultFolder(this.userId);
     
     if (defaultFolder && !this.isDefault) {
@@ -246,6 +261,7 @@ folderSchema.pre('deleteOne', { document: true, query: false }, async function(n
     
     next();
   } catch (error) {
+    console.error('[Folder] Error in pre-delete middleware:', error);
     next(error);
   }
 });

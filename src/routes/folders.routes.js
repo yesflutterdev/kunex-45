@@ -1269,4 +1269,37 @@ router.put('/:folderId/thumbnails', auth.authenticate, foldersController.updateF
  */
 router.get('/:folderId/pages', auth.authenticate, foldersController.getFolderPages);
 
+/**
+ * @swagger
+ * /api/folders/ensure-default:
+ *   post:
+ *     summary: Ensure default folder exists for user
+ *     description: Verifies and creates default folder if it doesn't exist
+ *     tags: [Folders]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Default folder verified/created successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 message:
+ *                   type: string
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     folder:
+ *                       type: object
+ *       500:
+ *         description: Failed to create default folder
+ *       401:
+ *         description: Unauthorized
+ */
+router.post('/ensure-default', auth.authenticate, foldersController.ensureDefaultFolder);
+
 module.exports = router; 

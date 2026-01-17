@@ -74,6 +74,9 @@ exports.getFolders = async (req, res, next) => {
     const userId = req.user.id;
     const { includeEmpty, sortBy, limit, category, populatePages = false } = value;
 
+    // Ensure default folder exists for user
+    await Folder.getDefaultFolder(userId);
+
     // Build query options
     const options = { includeEmpty, sortBy, limit };
 
@@ -1009,10 +1012,40 @@ exports.moveBusinessPageBetweenFolders = async (req, res, next) => {
     const { pageId } = req.params;
     const { fromFolderId, toFolderId } = req.body;
 
+    // Validate required parameters
+    if (!pageId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Page ID is required in URL parameter'
+      });
+    }
+
     if (!fromFolderId || !toFolderId) {
       return res.status(400).json({
         success: false,
-        message: 'Both fromFolderId and toFolderId are required'
+        message: 'Both fromFolderId and toFolderId are required in request body'
+      });
+    }
+
+    // Validate ObjectId format
+    if (!mongoose.Types.ObjectId.isValid(pageId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid pageId format'
+      });
+    }
+
+    if (!mongoose.Types.ObjectId.isValid(fromFolderId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid fromFolderId format'
+      });
+    }
+
+    if (!mongoose.Types.ObjectId.isValid(toFolderId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid toFolderId format'
       });
     }
 
@@ -1030,6 +1063,7 @@ exports.moveBusinessPageBetweenFolders = async (req, res, next) => {
     ]);
 
     if (!fromFolder) {
+      console.log(`[Move Page] Source folder not found: ${fromFolderId} for user: ${userId}`);
       return res.status(404).json({
         success: false,
         message: 'Source folder not found or access denied'
@@ -1037,31 +1071,125 @@ exports.moveBusinessPageBetweenFolders = async (req, res, next) => {
     }
 
     if (!toFolder) {
+      console.log(`[Move Page] Target folder not found: ${toFolderId} for user: ${userId}`);
       return res.status(404).json({
         success: false,
         message: 'Target folder not found or access denied'
       });
     }
 
+    // Convert pageId to ObjectId for query
+    const pageObjectId = new mongoose.Types.ObjectId(pageId);
+    const fromFolderObjectId = new mongoose.Types.ObjectId(fromFolderId);
+
     // Find the favorite in the source folder
-    const favorite = await Favorite.findOne({ 
-      folderId: fromFolderId, 
+    // For Page type, widgetId could be BusinessProfile ID or BuilderPage ID
+    // First try direct match
+    let favorite = await Favorite.findOne({ 
+      folderId: fromFolderObjectId, 
       userId,
       $or: [
+        { widgetId: pageObjectId },
         { widgetId: pageId },
         { productId: pageId }
       ]
     });
 
+    // If not found, pageId might be a BuilderPage ID but favorite has BusinessProfile ID
+    // Or vice versa - try to find the related BusinessProfile/BuilderPage
     if (!favorite) {
+      const BuilderPage = require('../models/builderPage.model');
+      
+      // Check if pageId is a BuilderPage ID
+      const builderPage = await BuilderPage.findById(pageId).select('businessId').lean();
+      if (builderPage && builderPage.businessId) {
+        // Try finding favorite with BusinessProfile ID
+        const businessProfileId = builderPage.businessId;
+        favorite = await Favorite.findOne({
+          folderId: fromFolderObjectId,
+          userId,
+          widgetId: businessProfileId,
+          type: 'Page'
+        });
+      } else {
+        // Check if pageId is a BusinessProfile ID and has a BuilderPage
+        const businessProfile = await BusinessProfile.findById(pageId).select('builderPageId').lean();
+        if (businessProfile && businessProfile.builderPageId) {
+          // Try finding favorite with BuilderPage ID
+          const builderPageId = businessProfile.builderPageId;
+          favorite = await Favorite.findOne({
+            folderId: fromFolderObjectId,
+            userId,
+            widgetId: builderPageId,
+            type: 'Page'
+          });
+        }
+      }
+    }
+
+    if (!favorite) {
+      console.log(`[Move Page] Favorite not found for pageId: ${pageId} in folder: ${fromFolderId}`);
+      
+      // Try to find if the page exists in any folder for debugging
+      const anyFavorite = await Favorite.findOne({
+        userId,
+        $or: [
+          { widgetId: pageObjectId },
+          { productId: pageId }
+        ]
+      });
+
+      if (anyFavorite) {
+        console.log(`[Move Page] Page exists in different folder: ${anyFavorite.folderId}`);
+        return res.status(404).json({
+          success: false,
+          message: `Page not found in source folder. Page exists in folder: ${anyFavorite.folderId}`
+        });
+      }
+
       return res.status(404).json({
         success: false,
-        message: 'Page not found in source folder'
+        message: 'Page not found in source folder. Make sure the page is favorited in the source folder.'
+      });
+    }
+
+    // Check if page already exists in target folder
+    const toFolderObjectId = new mongoose.Types.ObjectId(toFolderId);
+    
+    // Get the actual widgetId from the favorite to check for duplicates
+    const actualWidgetId = favorite.widgetId;
+    
+    let existingInTarget = await Favorite.findOne({
+      folderId: toFolderObjectId,
+      userId,
+      widgetId: actualWidgetId,
+      type: favorite.type,
+      _id: { $ne: favorite._id }
+    });
+
+    // Also check with pageId in case there's a different favorite with same page
+    if (!existingInTarget) {
+      existingInTarget = await Favorite.findOne({
+        folderId: toFolderObjectId,
+        userId,
+        $or: [
+          { widgetId: pageObjectId },
+          { widgetId: pageId },
+          { productId: pageId }
+        ],
+        _id: { $ne: favorite._id }
+      });
+    }
+
+    if (existingInTarget) {
+      return res.status(409).json({
+        success: false,
+        message: 'Page already exists in target folder'
       });
     }
 
     // Move the favorite to the target folder
-    favorite.folderId = toFolderId;
+    favorite.folderId = toFolderObjectId;
     await favorite.save();
 
     // Update item counts for both folders
@@ -1093,6 +1221,7 @@ exports.moveBusinessPageBetweenFolders = async (req, res, next) => {
       }
     });
   } catch (error) {
+    console.error('[Move Page] Error:', error);
     next(error);
   }
 };
@@ -1273,6 +1402,39 @@ exports.getFolderPages = async (req, res, next) => {
           total: Math.ceil(totalCount / parseInt(limit)),
           count: paginatedPages.length,
           totalItems: totalCount
+        }
+      }
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// Ensure default folder exists for user (utility function)
+exports.ensureDefaultFolder = async (req, res, next) => {
+  try {
+    const userId = req.user.id;
+    
+    // This will automatically create default folder if it doesn't exist
+    const defaultFolder = await Folder.getDefaultFolder(userId);
+    
+    if (!defaultFolder) {
+      return res.status(500).json({
+        success: false,
+        message: 'Failed to create default folder'
+      });
+    }
+    
+    res.status(200).json({
+      success: true,
+      message: 'Default folder verified/created successfully',
+      data: {
+        folder: {
+          _id: defaultFolder._id,
+          name: defaultFolder.name,
+          isDefault: defaultFolder.isDefault,
+          itemCount: defaultFolder.itemCount,
+          createdAt: defaultFolder.createdAt
         }
       }
     });
