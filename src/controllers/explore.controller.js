@@ -82,13 +82,19 @@ exports.getNearbyBusinesses = async (req, res, next) => {
       };
     }
 
-    // Apply filters
+    // Apply filters - use industryId (ObjectId) matching
     if (category) {
-      query.$or = [
-        { industry: new RegExp(category, 'i') },
-        { subIndustry: new RegExp(category, 'i') },
-        { industryTags: { $in: [new RegExp(category, 'i')] } }
-      ];
+      const industryIds = await getIndustryIdsFromCategory(category);
+      if (industryIds.length > 0) {
+        query.industryId = { $in: industryIds };
+      } else {
+        // Fallback to string matching if no Industry found (backward compatibility)
+        query.$or = [
+          { industry: new RegExp(category, 'i') },
+          { subIndustry: new RegExp(category, 'i') },
+          { industryTags: new RegExp(category, 'i') }
+        ];
+      }
     }
 
     if (rating) {
@@ -108,7 +114,16 @@ exports.getNearbyBusinesses = async (req, res, next) => {
     }
 
     if (features && features.length > 0) {
-      query.features = { $in: features.map(f => new RegExp(f, 'i')) };
+      // For array fields, use RegExp directly (MongoDB supports this)
+      if (features.length === 1) {
+        query.features = new RegExp(features[0], 'i');
+      } else {
+        // For multiple features, use $or
+        query.$or = query.$or || [];
+        features.forEach(f => {
+          query.$or.push({ features: new RegExp(f, 'i') });
+        });
+      }
     }
 
     if (openedStatus === 'open') {
@@ -250,8 +265,6 @@ exports.getTopPicks = async (req, res, next) => {
       openedStatus
     } = value;
 
-    console.log(`🔍 [Top Picks] User: ${userId}, Limit: ${limit}, Category: ${category || 'none'}`);
-
     // Get user preferences for personalization
     const [userSearches, userBusinessProfile, userFavorites] = await Promise.all([
       // Get user's recent searches to extract categories/industries
@@ -260,9 +273,9 @@ exports.getTopPicks = async (req, res, next) => {
         .limit(20)
         .select('category searchTerm')
         .lean(),
-      // Get user's own business profile to get their industries
+      // Get user's own business profile to get their industryIds
       BusinessProfile.findOne({ userId })
-        .select('industry subIndustry industryTags')
+        .select('industryId subIndustryId industry subIndustry industryTags')
         .lean(),
       // Get user's favorites to extract liked industries/pages
       Favorite.find({ userId, type: { $in: ['Page', 'BusinessProfile'] } })
@@ -271,42 +284,21 @@ exports.getTopPicks = async (req, res, next) => {
         .lean()
     ]);
 
-    // Extract preferred industries/categories from user data
-    const preferredIndustries = new Set();
-    const preferredCategories = new Set();
+    // Extract preferred industryIds (ObjectIds) - this is the industry-standard approach
+    const preferredIndustryIds = new Set();
+    const preferredSubIndustryIds = new Set();
 
-    // From search history
-    userSearches.forEach(search => {
-      if (search.category) {
-        preferredCategories.add(search.category.toLowerCase());
-      }
-      if (search.searchTerm) {
-        // Try to extract industry keywords from search terms
-        const terms = search.searchTerm.toLowerCase().split(/\s+/);
-        terms.forEach(term => {
-          if (term.length > 3) {
-            preferredCategories.add(term);
-          }
-        });
-      }
-    });
-
-    // From user's own business profile
+    // From user's own business profile - use industryId (ObjectId)
     if (userBusinessProfile) {
-      if (userBusinessProfile.industry) {
-        preferredIndustries.add(userBusinessProfile.industry.toLowerCase());
+      if (userBusinessProfile.industryId) {
+        preferredIndustryIds.add(userBusinessProfile.industryId.toString());
       }
-      if (userBusinessProfile.subIndustry) {
-        preferredIndustries.add(userBusinessProfile.subIndustry.toLowerCase());
-      }
-      if (userBusinessProfile.industryTags && userBusinessProfile.industryTags.length > 0) {
-        userBusinessProfile.industryTags.forEach(tag => {
-          preferredIndustries.add(tag.toLowerCase());
-        });
+      if (userBusinessProfile.subIndustryId) {
+        preferredSubIndustryIds.add(userBusinessProfile.subIndustryId);
       }
     }
 
-    // From user's favorites - fetch business profiles for Page/BusinessProfile favorites
+    // From user's favorites - fetch business profiles and get their industryIds
     const favoriteBusinessIds = userFavorites
       .filter(f => f.type === 'Page' || f.type === 'BusinessProfile')
       .map(f => f.widgetId);
@@ -315,36 +307,23 @@ exports.getTopPicks = async (req, res, next) => {
       const favoriteBusinesses = await BusinessProfile.find({
         _id: { $in: favoriteBusinessIds }
       })
-        .select('industry subIndustry industryTags')
+        .select('industryId subIndustryId')
         .lean();
 
       favoriteBusinesses.forEach(business => {
-        if (business.industry) {
-          preferredIndustries.add(business.industry.toLowerCase());
+        if (business.industryId) {
+          preferredIndustryIds.add(business.industryId.toString());
         }
-        if (business.subIndustry) {
-          preferredIndustries.add(business.subIndustry.toLowerCase());
-        }
-        if (business.industryTags && business.industryTags.length > 0) {
-          business.industryTags.forEach(tag => {
-            preferredIndustries.add(tag.toLowerCase());
-          });
+        if (business.subIndustryId) {
+          preferredSubIndustryIds.add(business.subIndustryId);
         }
       });
-    }
-
-    console.log(`📊 [Top Picks] User preferences - Industries: ${preferredIndustries.size}, Categories: ${preferredCategories.size}`);
-    if (preferredIndustries.size > 0) {
-      console.log(`   Industries: ${Array.from(preferredIndustries).join(', ')}`);
-    }
-    if (preferredCategories.size > 0) {
-      console.log(`   Categories: ${Array.from(preferredCategories).join(', ')}`);
     }
 
     // Build query for top picks
     const query = {};
 
-    // Add geo-query if coordinates provided
+    // Geo-query if coordinates provided
     if (longitude && latitude) {
       query['location.coordinates'] = {
         $near: {
@@ -357,38 +336,40 @@ exports.getTopPicks = async (req, res, next) => {
       };
     }
 
-    // Apply category filter if provided
+    // Category or industry filter
     if (category) {
-      query.$or = [
-        { industry: new RegExp(category, 'i') },
-        { subIndustry: new RegExp(category, 'i') },
-        { industryTags: { $in: [new RegExp(category, 'i')] } }
-      ];
-    } else if (preferredIndustries.size > 0 || preferredCategories.size > 0) {
-      // Personalize based on user preferences
-      const industryArray = Array.from(preferredIndustries);
-      const categoryArray = Array.from(preferredCategories);
-      const allPreferences = [...industryArray, ...categoryArray];
-
-      if (allPreferences.length > 0) {
-        query.$or = [
-          { industry: { $in: allPreferences.map(p => new RegExp(p, 'i')) } },
-          { subIndustry: { $in: allPreferences.map(p => new RegExp(p, 'i')) } },
-          { industryTags: { $in: allPreferences.map(p => new RegExp(p, 'i')) } },
-          { businessName: { $in: allPreferences.map(p => new RegExp(p, 'i')) } }
-        ];
+      const Industry = require('../models/industry.model');
+      const industries = await Industry.find({
+        title: { $regex: category, $options: 'i' },
+        isActive: true
+      }).select('_id').lean();
+      
+      if (industries.length > 0) {
+        query.industryId = { $in: industries.map(ind => ind._id) };
+      }
+    } else if (preferredIndustryIds.size > 0 || preferredSubIndustryIds.size > 0) {
+      const orConditions = [];
+      
+      if (preferredIndustryIds.size > 0) {
+        const industryIds = Array.from(preferredIndustryIds).map(id => new mongoose.Types.ObjectId(id));
+        orConditions.push({ industryId: { $in: industryIds } });
+      }
+      
+      if (preferredSubIndustryIds.size > 0) {
+        orConditions.push({ subIndustryId: { $in: Array.from(preferredSubIndustryIds) } });
+      }
+      
+      if (orConditions.length > 0) {
+        query.$or = orConditions;
       }
     }
 
+    // Price range filter
     if (priceRange) {
-      if (Array.isArray(priceRange)) {
-        query.priceRange = { $in: priceRange };
-      } else {
-        query.priceRange = priceRange;
-      }
+      query.priceRange = Array.isArray(priceRange) ? { $in: priceRange } : priceRange;
     }
 
-    // Apply "open now" filter
+    // Open now filter
     if (openedStatus === 'open') {
       const now = new Date();
       const currentDay = now.toLocaleDateString('en-US', { weekday: 'long' });
@@ -409,39 +390,15 @@ exports.getTopPicks = async (req, res, next) => {
         }
       };
 
-      // Combine with existing query using $and
-      if (query.$and) {
-        query.$and.push(openNowQuery);
-      } else if (query.$or) {
-        query.$and = [
-          { $or: query.$or },
-          openNowQuery
-        ];
+      if (query.$or) {
+        query.$and = [{ $or: query.$or }, openNowQuery];
         delete query.$or;
       } else {
         Object.assign(query, openNowQuery);
       }
     }
 
-    // Quality criteria for top picks - require minimum rating
-    const qualityCriteria = {
-      'metrics.ratingAverage': { $gte: 3.5 }
-    };
-
-    // If we already have $or for industries/categories, combine with $and
-    if (query.$or && query.$or.length > 0) {
-      query.$and = [
-        { $or: query.$or },
-        qualityCriteria
-      ];
-      delete query.$or;
-    } else {
-      // No industry filter, just apply quality criteria
-      Object.assign(query, qualityCriteria);
-    }
-
-    // Execute query with sorting for top picks
-    console.log(`🔎 [Top Picks] Query:`, JSON.stringify(query, null, 2));
+    // Execute query
     const businesses = await BusinessProfile.find(query)
       .populate('userId', 'firstName lastName')
       .select('-__v')
@@ -451,108 +408,20 @@ exports.getTopPicks = async (req, res, next) => {
         'metrics.favoriteCount': -1,
         'updatedAt': -1
       })
-      .limit(limit * 2) // Get more to filter and rank
+      .limit(limit * 3)
       .lean();
-    
-    console.log(`✅ [Top Picks] Found ${businesses.length} businesses from initial query`);
 
-    // If no personalized results, fallback to general top picks
-    let finalBusinesses = businesses;
-    if (businesses.length === 0) {
-      console.log(`⚠️ [Top Picks] No results from personalized query, trying fallback...`);
-      // Fallback: remove industry filter but keep quality criteria
-      const fallbackQuery = {};
-      if (longitude && latitude) {
-        fallbackQuery['location.coordinates'] = {
-          $near: {
-            $geometry: {
-              type: 'Point',
-              coordinates: [longitude, latitude]
-            },
-            $maxDistance: maxDistance
-          }
-        };
-      }
-      if (priceRange) {
-        if (Array.isArray(priceRange)) {
-          fallbackQuery.priceRange = { $in: priceRange };
-        } else {
-          fallbackQuery.priceRange = priceRange;
-        }
-      }
-      // Apply quality criteria (less strict)
-      Object.assign(fallbackQuery, qualityCriteria);
-
-      finalBusinesses = await BusinessProfile.find(fallbackQuery)
-        .populate('userId', 'firstName lastName')
-        .select('-__v')
-        .sort({
-          'metrics.ratingAverage': -1,
-          'metrics.viewCount': -1,
-          'metrics.favoriteCount': -1
-        })
-        .limit(limit)
-        .lean();
-
-      // If still no results, remove quality criteria entirely (most lenient fallback)
-      if (finalBusinesses.length === 0) {
-        console.log(`⚠️ [Top Picks] Still no results, using most lenient fallback...`);
-        const mostLenientQuery = {};
-        if (longitude && latitude) {
-          mostLenientQuery['location.coordinates'] = {
-            $near: {
-              $geometry: {
-                type: 'Point',
-                coordinates: [longitude, latitude]
-              },
-              $maxDistance: maxDistance
-            }
-          };
-        }
-        if (priceRange) {
-          if (Array.isArray(priceRange)) {
-            mostLenientQuery.priceRange = { $in: priceRange };
-          } else {
-            mostLenientQuery.priceRange = priceRange;
-          }
-        }
-
-        finalBusinesses = await BusinessProfile.find(mostLenientQuery)
-          .populate('userId', 'firstName lastName')
-          .select('-__v')
-          .sort({
-            'metrics.ratingAverage': -1,
-            'metrics.viewCount': -1,
-            'metrics.favoriteCount': -1,
-            'createdAt': -1
-          })
-          .limit(limit)
-          .lean();
-      }
-    }
-
-    // Rank businesses by personalization score
-    const businessesWithScores = finalBusinesses.map(business => {
+    // Rank by personalization score
+    const businessesWithScores = businesses.map(business => {
       let personalizationScore = 0;
-      const businessIndustry = business.industry?.toLowerCase() || '';
-      const businessSubIndustry = business.subIndustry?.toLowerCase() || '';
-      const businessTags = (business.industryTags || []).map(t => t.toLowerCase());
-      const businessName = business.businessName?.toLowerCase() || '';
-
-      // Check if business matches user preferences
-      preferredIndustries.forEach(pref => {
-        if (businessIndustry.includes(pref) || businessSubIndustry.includes(pref) || 
-            businessTags.some(tag => tag.includes(pref)) || businessName.includes(pref)) {
-          personalizationScore += 2;
-        }
-      });
-
-      preferredCategories.forEach(pref => {
-        if (businessIndustry.includes(pref) || businessSubIndustry.includes(pref) || 
-            businessTags.some(tag => tag.includes(pref)) || businessName.includes(pref)) {
-          personalizationScore += 1;
-        }
-      });
+      
+      if (business.industryId && preferredIndustryIds.has(business.industryId.toString())) {
+        personalizationScore += 3;
+      }
+      
+      if (business.subIndustryId && preferredSubIndustryIds.has(business.subIndustryId)) {
+        personalizationScore += 2;
+      }
 
       return {
         business,
@@ -561,7 +430,7 @@ exports.getTopPicks = async (req, res, next) => {
       };
     });
 
-    // Sort by personalization score first, then top pick score
+    // Sort and take top results
     businessesWithScores.sort((a, b) => {
       if (b.personalizationScore !== a.personalizationScore) {
         return b.personalizationScore - a.personalizationScore;
@@ -569,19 +438,21 @@ exports.getTopPicks = async (req, res, next) => {
       return b.topPickScore - a.topPickScore;
     });
 
-    // Take top results
     const topBusinesses = businessesWithScores.slice(0, limit).map(item => item.business);
 
-    // Filter businesses with complete profiles
+    // Filter for complete profiles only
     const completeBusinesses = [];
     for (const business of topBusinesses) {
       if (await hasCompleteProfile(business)) {
         completeBusinesses.push(business);
       }
     }
+    
+    // Limit to requested amount
+    const finalBusinesses = completeBusinesses.slice(0, limit);
 
-    // Add distance if coordinates provided
-    const businessesWithDetails = completeBusinesses.map(business => {
+    // Add distance and additional details
+    const businessesWithDetails = finalBusinesses.map(business => {
       let distance = null;
       if (longitude && latitude && business.location?.coordinates?.coordinates) {
         distance = calculateDistance(
@@ -604,8 +475,6 @@ exports.getTopPicks = async (req, res, next) => {
       };
     });
 
-    console.log(`✅ [Top Picks] Returning ${businessesWithDetails.length} businesses`);
-    
     res.status(200).json({
       success: true,
       data: {
@@ -658,13 +527,19 @@ exports.getOnTheRise = async (req, res, next) => {
       };
     }
 
-    // Apply filters
+    // Apply filters - use industryId (ObjectId) matching
     if (category) {
-      query.$or = [
-        { industry: new RegExp(category, 'i') },
-        { subIndustry: new RegExp(category, 'i') },
-        { industryTags: { $in: [new RegExp(category, 'i')] } }
-      ];
+      const industryIds = await getIndustryIdsFromCategory(category);
+      if (industryIds.length > 0) {
+        query.industryId = { $in: industryIds };
+      } else {
+        // Fallback to string matching if no Industry found (backward compatibility)
+        query.$or = [
+          { industry: new RegExp(category, 'i') },
+          { subIndustry: new RegExp(category, 'i') },
+          { industryTags: new RegExp(category, 'i') }
+        ];
+      }
     }
 
     if (priceRange) {
@@ -836,13 +711,19 @@ exports.getNewlyAdded = async (req, res, next) => {
     // Build query for newly added businesses
     const query = {};
 
-    // Apply filters
+    // Apply filters - use industryId (ObjectId) matching
     if (category) {
-      query.$or = [
-        { industry: new RegExp(category, 'i') },
-        { subIndustry: new RegExp(category, 'i') },
-        { industryTags: { $in: [new RegExp(category, 'i')] } }
-      ];
+      const industryIds = await getIndustryIdsFromCategory(category);
+      if (industryIds.length > 0) {
+        query.industryId = { $in: industryIds };
+      } else {
+        // Fallback to string matching if no Industry found (backward compatibility)
+        query.$or = [
+          { industry: new RegExp(category, 'i') },
+          { subIndustry: new RegExp(category, 'i') },
+          { industryTags: new RegExp(category, 'i') }
+        ];
+      }
     }
 
     if (priceRange) {
@@ -1028,13 +909,19 @@ exports.getRecents = async (req, res, next) => {
       builderPageId: { $in: builderPageIds }
     };
 
-    // Apply filters
+    // Apply filters - use industryId (ObjectId) matching
     if (category) {
-      query.$or = [
-        { industry: new RegExp(category, 'i') },
-        { subIndustry: new RegExp(category, 'i') },
-        { industryTags: { $in: [new RegExp(category, 'i')] } }
-      ];
+      const industryIds = await getIndustryIdsFromCategory(category);
+      if (industryIds.length > 0) {
+        query.industryId = { $in: industryIds };
+      } else {
+        // Fallback to string matching if no Industry found (backward compatibility)
+        query.$or = [
+          { industry: new RegExp(category, 'i') },
+          { subIndustry: new RegExp(category, 'i') },
+          { industryTags: new RegExp(category, 'i') }
+        ];
+      }
     }
 
     if (priceRange) {
@@ -1266,13 +1153,19 @@ exports.exploreBusinesses = async (req, res, next) => {
       query.businessHours = businessHoursQuery;
     }
 
-    // Apply filters
+    // Apply filters - use industryId (ObjectId) matching
     if (category) {
-      query.$or = [
-        { industry: new RegExp(category, 'i') },
-        { subIndustry: new RegExp(category, 'i') },
-        { industryTags: { $in: [new RegExp(category, 'i')] } }
-      ];
+      const industryIds = await getIndustryIdsFromCategory(category);
+      if (industryIds.length > 0) {
+        query.industryId = { $in: industryIds };
+      } else {
+        // Fallback to string matching if no Industry found (backward compatibility)
+        query.$or = [
+          { industry: new RegExp(category, 'i') },
+          { subIndustry: new RegExp(category, 'i') },
+          { industryTags: new RegExp(category, 'i') }
+        ];
+      }
     }
 
     if (rating) {
@@ -1293,7 +1186,16 @@ exports.exploreBusinesses = async (req, res, next) => {
     }
 
     if (features && features.length > 0) {
-      query.features = { $in: features.map(f => new RegExp(f, 'i')) };
+      // For array fields, use RegExp directly (MongoDB supports this)
+      if (features.length === 1) {
+        query.features = new RegExp(features[0], 'i');
+      } else {
+        // For multiple features, use $or
+        query.$or = query.$or || [];
+        features.forEach(f => {
+          query.$or.push({ features: new RegExp(f, 'i') });
+        });
+      }
     }
 
     // Filter by opened status
@@ -1517,6 +1419,23 @@ exports.saveRecentSearch = async (req, res, next) => {
   }
 };
 
+// Helper function to convert category string to industryIds (ObjectIds)
+// Industry-standard: Use ObjectId matching instead of string regex
+async function getIndustryIdsFromCategory(category) {
+  try {
+    const Industry = require('../models/industry.model');
+    const industries = await Industry.find({
+      title: { $regex: category, $options: 'i' },
+      isActive: true
+    }).select('_id').lean();
+    
+    return industries.map(ind => ind._id);
+  } catch (error) {
+    console.error('[getIndustryIdsFromCategory] Error:', error);
+    return [];
+  }
+}
+
 // Helper function to calculate distance between two points
 function calculateDistance(lat1, lon1, lat2, lon2) {
   const R = 6371; // Radius of the Earth in kilometers
@@ -1550,61 +1469,101 @@ function checkIfCurrentlyOpen(businessHours) {
   return currentTime >= todayHours.open && currentTime <= todayHours.close;
 }
 
-// Helper function to check if business has complete profile
-// Returns true if business has: cover photo, logo, name, industry, bio, location, and at least one widget
-async function hasCompleteProfile(business) {
-  // Check required fields
-  if (!business.coverImage || business.coverImage.trim() === '') {
-    return false;
-  }
-  
-  if (!business.logo || business.logo.trim() === '') {
-    return false;
-  }
-  
-  if (!business.businessName || business.businessName.trim() === '') {
-    return false;
-  }
-  
-  if (!business.industry || business.industry.trim() === '') {
-    return false;
-  }
-  
-  // Check bio (description)
-  if (!business.description || 
-      (!business.description.short && !business.description.full) ||
-      (business.description.short && business.description.short.trim() === '' && 
-       business.description.full && business.description.full.trim() === '')) {
-    return false;
-  }
-  
-  // Check location
-  if (!business.location || 
-      (!business.location.address && !business.location.city) ||
-      (!business.location.coordinates || 
-       !business.location.coordinates.coordinates ||
-       business.location.coordinates.coordinates.length < 2)) {
-    return false;
-  }
-  
-  // Check if business has at least one widget
-  // We need to check the BuilderPage for widgets
-  if (business.builderPageId) {
-    const widgetCount = await Widget.countDocuments({
-      pageId: business.builderPageId,
-      status: 'active',
-      isVisible: true
-    });
-    
-    if (widgetCount === 0) {
-      return false;
+// Helper function to check if business has complete profile (with detailed reason)
+// Returns { isComplete: boolean, reason?: string }
+async function hasCompleteProfileWithDetails(business) {
+  try {
+    // Check cover photo (coverImage)
+    if (!business.coverImage || typeof business.coverImage !== 'string' || business.coverImage.trim() === '') {
+      return { isComplete: false, reason: 'noCover' };
     }
-  } else {
-    // No builderPageId means no widgets
-    return false;
+    
+    // Check logo
+    if (!business.logo || typeof business.logo !== 'string' || business.logo.trim() === '') {
+      return { isComplete: false, reason: 'noLogo' };
+    }
+    
+    // Check business name
+    if (!business.businessName || typeof business.businessName !== 'string' || business.businessName.trim() === '') {
+      return { isComplete: false, reason: 'noName' };
+    }
+    
+    // Check industry - can be either industry (string) or industryId (ObjectId)
+    // Data integrity: industry string is populated from Industry.title, but industryId is the source of truth
+    const hasIndustry = (business.industry && typeof business.industry === 'string' && business.industry.trim() !== '') ||
+                        (business.industryId && business.industryId.toString && business.industryId.toString().length > 0);
+    
+    if (!hasIndustry) {
+      return { isComplete: false, reason: 'noIndustry' };
+    }
+    
+    // Check bio (description) - either short or full description
+    const hasDescription = business.description && (
+      (business.description.short && typeof business.description.short === 'string' && business.description.short.trim() !== '') ||
+      (business.description.full && typeof business.description.full === 'string' && business.description.full.trim() !== '')
+    );
+    
+    if (!hasDescription) {
+      return { isComplete: false, reason: 'noDescription' };
+    }
+    
+    // Check location - need either address/city OR valid coordinates (not both required)
+    const hasLocation = business.location && (
+      (business.location.address && typeof business.location.address === 'string' && business.location.address.trim() !== '') ||
+      (business.location.city && typeof business.location.city === 'string' && business.location.city.trim() !== '') ||
+      (business.location.coordinates && 
+       business.location.coordinates.coordinates && 
+       Array.isArray(business.location.coordinates.coordinates) &&
+       business.location.coordinates.coordinates.length === 2 &&
+       business.location.coordinates.coordinates[0] !== 0 &&
+       business.location.coordinates.coordinates[1] !== 0)
+    );
+    
+    if (!hasLocation) {
+      return { isComplete: false, reason: 'noLocation' };
+    }
+    
+    // Check if business has at least one widget
+    // Widgets are linked via pageId (primary) or businessId (fallback)
+    try {
+      let activeVisibleWidgets = 0;
+      
+      // Primary check: widgets linked via pageId
+      if (business.builderPageId && mongoose.Types.ObjectId.isValid(business.builderPageId)) {
+        activeVisibleWidgets = await Widget.countDocuments({
+          pageId: business.builderPageId,
+          status: 'active',
+          isVisible: true
+        });
+      }
+      
+      // Fallback: if no widgets via pageId, check via businessId
+      if (activeVisibleWidgets === 0 && business._id && mongoose.Types.ObjectId.isValid(business._id)) {
+        activeVisibleWidgets = await Widget.countDocuments({ 
+          businessId: business._id,
+          status: 'active',
+          isVisible: true
+        });
+      }
+      
+      if (activeVisibleWidgets === 0) {
+        return { isComplete: false, reason: 'noWidgets' };
+      }
+    } catch (error) {
+      return { isComplete: false, reason: 'noWidgets' };
+    }
+    
+    return { isComplete: true };
+  } catch (error) {
+    console.error(`[hasCompleteProfile] Error checking profile for business ${business._id}:`, error);
+    return { isComplete: false, reason: 'error' };
   }
-  
-  return true;
+}
+
+// Helper function to check if business has complete profile (backward compatibility)
+async function hasCompleteProfile(business) {
+  const result = await hasCompleteProfileWithDetails(business);
+  return result.isComplete;
 }
 
 // Helper function to calculate top pick score
