@@ -698,6 +698,9 @@ exports.getFolderBusinessPages = async (req, res, next) => {
     for (const favorite of favorites) {
       let itemData = {
         _id: favorite._id,
+        id: null, // Page/item ID
+        businessId: null, // BusinessProfile ID
+        folderId: favorite.folderId.toString(), // Folder ID
         title: '',
         slug: '',
         description: '',
@@ -711,9 +714,28 @@ exports.getFolderBusinessPages = async (req, res, next) => {
 
       // Process based on favorite type and available data
       if (favorite.type === 'Page' && favorite.pageData) {
+        // Get businessId from BuilderPage or BusinessProfile
+        const BuilderPage = require('../models/builderPage.model');
+        const BusinessProfile = require('../models/businessProfile.model');
+        let businessId = null;
+        
+        // Try BuilderPage first
+        const page = await BuilderPage.findById(favorite.pageData._id).select('businessId').lean();
+        if (page?.businessId) {
+          businessId = page.businessId.toString();
+        } else {
+          // If not found in BuilderPage, check if it's a BusinessProfile ID
+          const business = await BusinessProfile.findById(favorite.pageData._id).select('_id').lean();
+          if (business) {
+            businessId = business._id.toString();
+          }
+        }
+        
         itemData = {
           ...itemData,
           _id: favorite.pageData._id,
+          id: favorite.pageData._id, // Page ID (BuilderPage ID or BusinessProfile ID)
+          businessId: businessId, // BusinessProfile ID
           title: favorite.pageData.title,
           slug: favorite.pageData.slug,
           description: favorite.pageData.description,
@@ -727,9 +749,25 @@ exports.getFolderBusinessPages = async (req, res, next) => {
         organizedData.business.push(itemData);
         
       } else if (favorite.type === 'Product' && favorite.productData) {
+        // Get businessId from Widget's pageId or businessId
+        const Widget = require('../models/widget.model');
+        const BusinessProfile = require('../models/businessProfile.model');
+        let businessId = null;
+        
+        const widget = await Widget.findById(favorite.productData.widgetId).select('pageId businessId').lean();
+        if (widget?.pageId) {
+          const BuilderPage = require('../models/builderPage.model');
+          const page = await BuilderPage.findById(widget.pageId).select('businessId').lean();
+          businessId = page?.businessId ? page.businessId.toString() : null;
+        } else if (widget?.businessId) {
+          businessId = widget.businessId.toString();
+        }
+        
         itemData = {
           ...itemData,
           _id: favorite.productData._id,
+          id: favorite.productData._id, // Product ID
+          businessId: businessId, // BusinessProfile ID
           title: favorite.productData.productName,
           slug: `${favorite.productData.widgetName}-${favorite.productData.productName}`.toLowerCase().replace(/\s+/g, '-'),
           description: `Product from ${favorite.productData.widgetName}`,
@@ -745,9 +783,25 @@ exports.getFolderBusinessPages = async (req, res, next) => {
         
       } else if (favorite.type === 'Product' && favorite.widgetData) {
         // Product not found - add to products array with unavailable flag
+        // Get businessId from Widget
+        const Widget = require('../models/widget.model');
+        const BusinessProfile = require('../models/businessProfile.model');
+        let businessId = null;
+        
+        const widget = await Widget.findById(favorite.widgetId).select('pageId businessId').lean();
+        if (widget?.pageId) {
+          const BuilderPage = require('../models/builderPage.model');
+          const page = await BuilderPage.findById(widget.pageId).select('businessId').lean();
+          businessId = page?.businessId ? page.businessId.toString() : null;
+        } else if (widget?.businessId) {
+          businessId = widget.businessId.toString();
+        }
+        
         itemData = {
           ...itemData,
           _id: favorite._id,
+          id: favorite._id, // Favorite ID as fallback
+          businessId: businessId, // BusinessProfile ID
           title: "Product Not Found",
           slug: `product-not-found-${favorite._id}`,
           description: "The favorited product is no longer available",
@@ -761,9 +815,24 @@ exports.getFolderBusinessPages = async (req, res, next) => {
         organizedData.products.push(itemData);
         
       } else if (favorite.type === 'Promotion' && favorite.widgetData) {
+        // Get businessId from Widget
+        const Widget = require('../models/widget.model');
+        let businessId = null;
+        
+        const widget = await Widget.findById(favorite.widgetId).select('pageId businessId').lean();
+        if (widget?.pageId) {
+          const BuilderPage = require('../models/builderPage.model');
+          const page = await BuilderPage.findById(widget.pageId).select('businessId').lean();
+          businessId = page?.businessId ? page.businessId.toString() : null;
+        } else if (widget?.businessId) {
+          businessId = widget.businessId.toString();
+        }
+        
         itemData = {
           ...itemData,
           _id: favorite.widgetData._id,
+          id: favorite.widgetData._id, // Widget ID
+          businessId: businessId, // BusinessProfile ID
           title: favorite.widgetData.name,
           slug: favorite.widgetData.name.toLowerCase().replace(/\s+/g, '-'),
           description: `Promotion: ${favorite.widgetData.name}`,
@@ -777,9 +846,24 @@ exports.getFolderBusinessPages = async (req, res, next) => {
         organizedData.promotions.push(itemData);
         
       } else if (favorite.type === 'Event' && favorite.widgetData) {
+        // Get businessId from Widget
+        const Widget = require('../models/widget.model');
+        let businessId = null;
+        
+        const widget = await Widget.findById(favorite.widgetId).select('pageId businessId').lean();
+        if (widget?.pageId) {
+          const BuilderPage = require('../models/builderPage.model');
+          const page = await BuilderPage.findById(widget.pageId).select('businessId').lean();
+          businessId = page?.businessId ? page.businessId.toString() : null;
+        } else if (widget?.businessId) {
+          businessId = widget.businessId.toString();
+        }
+        
         itemData = {
           ...itemData,
           _id: favorite.widgetData._id,
+          id: favorite.widgetData._id, // Widget ID
+          businessId: businessId, // BusinessProfile ID
           title: favorite.widgetData.name,
           slug: favorite.widgetData.name.toLowerCase().replace(/\s+/g, '-'),
           description: `Event: ${favorite.widgetData.name}`,
@@ -793,9 +877,12 @@ exports.getFolderBusinessPages = async (req, res, next) => {
         organizedData.events.push(itemData);
         
       } else if (favorite.type === 'BusinessProfile' && favorite.widgetData) {
+        // For BusinessProfile type, widgetId is the BusinessProfile ID
         itemData = {
           ...itemData,
           _id: favorite.widgetData._id,
+          id: favorite.widgetData._id, // BusinessProfile ID
+          businessId: favorite.widgetId.toString(), // BusinessProfile ID (same as widgetId)
           title: favorite.widgetData.name,
           slug: favorite.widgetData.name.toLowerCase().replace(/\s+/g, '-'),
           description: `Business: ${favorite.widgetData.name}`,
@@ -810,9 +897,24 @@ exports.getFolderBusinessPages = async (req, res, next) => {
         
       } else if (favorite.widgetData) {
         // Generic widget fallback
+        // Get businessId from Widget
+        const Widget = require('../models/widget.model');
+        let businessId = null;
+        
+        const widget = await Widget.findById(favorite.widgetId).select('pageId businessId').lean();
+        if (widget?.pageId) {
+          const BuilderPage = require('../models/builderPage.model');
+          const page = await BuilderPage.findById(widget.pageId).select('businessId').lean();
+          businessId = page?.businessId ? page.businessId.toString() : null;
+        } else if (widget?.businessId) {
+          businessId = widget.businessId.toString();
+        }
+        
         itemData = {
           ...itemData,
           _id: favorite.widgetData._id,
+          id: favorite.widgetData._id, // Widget ID
+          businessId: businessId, // BusinessProfile ID
           title: favorite.widgetData.name,
           slug: favorite.widgetData.name.toLowerCase().replace(/\s+/g, '-'),
           description: `Widget: ${favorite.widgetData.name}`,

@@ -27,7 +27,8 @@ exports.validateNearbyBusinesses = (data) => {
     features: Joi.alternatives().try(
       Joi.string().trim().max(100),
       Joi.array().items(Joi.string().trim().max(100))
-    )
+    ),
+    completeProfile: Joi.boolean().default(false)
   });
 
   return schema.validate(data, { abortEarly: false });
@@ -45,7 +46,8 @@ exports.validateTopPicks = (data) => {
       Joi.string().valid('$', '$$', '$$$', '$$$$'),
       Joi.array().items(Joi.string().valid('$', '$$', '$$$', '$$$$'))
     ),
-    openedStatus: Joi.string().valid('open', 'closed', 'any').default('any')
+    openedStatus: Joi.string().valid('open', 'closed', 'any').default('any'),
+    completeProfile: Joi.boolean().default(false)
   }).and('longitude', 'latitude'); // Both coordinates required if one is provided
 
   return schema.validate(data, { abortEarly: false });
@@ -64,7 +66,8 @@ exports.validateOnTheRise = (data) => {
       Joi.array().items(Joi.string().valid('$', '$$', '$$$', '$$$$'))
     ),
     daysBack: Joi.number().min(1).max(365).default(30), // Look back 1 day to 1 year
-    openedStatus: Joi.string().valid('open', 'closed', 'any').default('any')
+    openedStatus: Joi.string().valid('open', 'closed', 'any').default('any'),
+    completeProfile: Joi.boolean().default(false)
   }).and('longitude', 'latitude'); // Both coordinates required if one is provided
 
   return schema.validate(data, { abortEarly: false });
@@ -111,7 +114,8 @@ exports.validateExploreBusinesses = (data) => {
     // New search parameters
     toprated: Joi.boolean().default(false),
     opennow: Joi.boolean().default(false),
-    nearby: Joi.boolean().default(false)
+    nearby: Joi.boolean().default(false),
+    completeProfile: Joi.boolean().default(false)
   }).and('longitude', 'latitude'); // Both coordinates required if one is provided
 
   return schema.validate(data, { abortEarly: false });
@@ -263,7 +267,8 @@ exports.validateRecents = (data) => {
       Joi.string().valid('$', '$$', '$$$', '$$$$'),
       Joi.array().items(Joi.string().valid('$', '$$', '$$$', '$$$$'))
     ),
-    openedStatus: Joi.string().valid('open', 'closed', 'any').default('any')
+    openedStatus: Joi.string().valid('open', 'closed', 'any').default('any'),
+    completeProfile: Joi.boolean().default(false)
   }).and('longitude', 'latitude'); // Both coordinates required if one is provided
 
   return schema.validate(data, { abortEarly: false });
@@ -280,7 +285,8 @@ exports.validateNewlyAdded = (data) => {
     priceRange: Joi.alternatives().try(
       Joi.string().valid('$', '$$', '$$$', '$$$$'),
       Joi.array().items(Joi.string().valid('$', '$$', '$$$', '$$$$'))
-    )
+    ),
+    completeProfile: Joi.boolean().default(false)
   }).and('longitude', 'latitude'); // Both coordinates required if one is provided
 
   return schema.validate(data, { abortEarly: false });

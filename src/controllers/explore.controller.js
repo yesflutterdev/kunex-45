@@ -44,7 +44,8 @@ exports.getNearbyBusinesses = async (req, res, next) => {
       priceRange,
       openedStatus,
       businessType,
-      features
+      features,
+      completeProfile = false
     } = value;
 
     // Get user's location from profile if not provided in query
@@ -178,16 +179,18 @@ exports.getNearbyBusinesses = async (req, res, next) => {
 
     const topBusinesses = finalBusinesses.slice(0, limit);
 
-    // Filter businesses with complete profiles
-    const completeBusinesses = [];
-    for (const business of topBusinesses) {
-      if (await hasCompleteProfile(business)) {
-        completeBusinesses.push(business);
+    // Filter businesses with complete profiles if requested
+    let filteredBusinesses = topBusinesses;
+    if (completeProfile) {
+      const completeBusinesses = [];
+      for (const business of topBusinesses) {
+        const validationResult = await hasCompleteProfileWithDetails(business);
+        if (validationResult.isComplete) {
+          completeBusinesses.push(business);
+        }
       }
+      filteredBusinesses = completeBusinesses.slice(0, limit);
     }
-
-    // Limit to requested limit after filtering
-    const filteredBusinesses = completeBusinesses.slice(0, limit);
 
     let distances = [];
     if (longitude && latitude && (longitude !== 0 || latitude !== 0)) {
@@ -262,7 +265,8 @@ exports.getTopPicks = async (req, res, next) => {
       limit = 15,
       category,
       priceRange,
-      openedStatus
+      openedStatus,
+      completeProfile = false
     } = value;
 
     // Get user preferences for personalization
@@ -440,16 +444,18 @@ exports.getTopPicks = async (req, res, next) => {
 
     const topBusinesses = businessesWithScores.slice(0, limit).map(item => item.business);
 
-    // Filter for complete profiles only
-    const completeBusinesses = [];
-    for (const business of topBusinesses) {
-      if (await hasCompleteProfile(business)) {
-        completeBusinesses.push(business);
+    // Filter for complete profiles if requested
+    let finalBusinesses = topBusinesses;
+    if (completeProfile) {
+      const completeBusinesses = [];
+      for (const business of topBusinesses) {
+        const validationResult = await hasCompleteProfileWithDetails(business);
+        if (validationResult.isComplete) {
+          completeBusinesses.push(business);
+        }
       }
+      finalBusinesses = completeBusinesses.slice(0, limit);
     }
-    
-    // Limit to requested amount
-    const finalBusinesses = completeBusinesses.slice(0, limit);
 
     // Add distance and additional details
     const businessesWithDetails = finalBusinesses.map(business => {
@@ -466,13 +472,18 @@ exports.getTopPicks = async (req, res, next) => {
 
       const isCurrentlyOpen = checkIfCurrentlyOpen(business.businessHours);
 
-      return {
+      const businessData = {
         ...business,
-        distance,
         isCurrentlyOpen,
-        distanceUnit: distance !== null ? 'km' : null,
         topPickScore: calculateTopPickScore(business)
       };
+
+      if (distance !== null) {
+        businessData.distance = distance;
+        businessData.distanceUnit = 'km';
+      }
+
+      return businessData;
     });
 
     res.status(200).json({
@@ -508,7 +519,8 @@ exports.getOnTheRise = async (req, res, next) => {
       limit = 15,
       category,
       priceRange,
-      openedStatus
+      openedStatus,
+      completeProfile = false
     } = value;
 
     // Build query for "On The Rise" - businesses with most traction (most viewed, fastest-growing engagement)
@@ -640,16 +652,21 @@ exports.getOnTheRise = async (req, res, next) => {
     // Take top results
     const topBusinesses = businessesWithScores.slice(0, limit).map(item => item.business);
 
-    // Filter businesses with complete profiles
-    const completeBusinesses = [];
-    for (const business of topBusinesses) {
-      if (await hasCompleteProfile(business)) {
-        completeBusinesses.push(business);
+    // Filter businesses with complete profiles if requested
+    let finalBusinesses = topBusinesses;
+    if (completeProfile) {
+      const completeBusinesses = [];
+      for (const business of topBusinesses) {
+        const validationResult = await hasCompleteProfileWithDetails(business);
+        if (validationResult.isComplete) {
+          completeBusinesses.push(business);
+        }
       }
+      finalBusinesses = completeBusinesses;
     }
 
     // Add distance and additional info
-    const businessesWithDetails = completeBusinesses.map(business => {
+    const businessesWithDetails = finalBusinesses.map(business => {
       let distance = null;
       if (longitude && latitude && business.location?.coordinates?.coordinates) {
         distance = calculateDistance(
@@ -705,7 +722,8 @@ exports.getNewlyAdded = async (req, res, next) => {
       maxDistance = 25000,
       limit = 15,
       category,
-      priceRange
+      priceRange,
+      completeProfile = false
     } = value;
 
     // Build query for newly added businesses
@@ -769,18 +787,23 @@ exports.getNewlyAdded = async (req, res, next) => {
 
     const topBusinesses = businesses.slice(0, limit);
 
-    // Filter businesses with complete profiles
-    const completeBusinesses = [];
-    for (const business of topBusinesses) {
-      if (await hasCompleteProfile(business)) {
-        completeBusinesses.push(business);
+    // Filter businesses with complete profiles if requested
+    let finalBusinesses = topBusinesses;
+    if (completeProfile) {
+      const completeBusinesses = [];
+      for (const business of topBusinesses) {
+        const validationResult = await hasCompleteProfileWithDetails(business);
+        if (validationResult.isComplete) {
+          completeBusinesses.push(business);
+        }
       }
+      finalBusinesses = completeBusinesses;
     }
 
     // Calculate distances if coordinates provided
     let distances = [];
     if (longitude && latitude) {
-      const businessLocations = completeBusinesses
+      const businessLocations = finalBusinesses
         .filter(business => business.location?.coordinates?.coordinates)
         .map(business => ({
           lat: business.location.coordinates.coordinates[1],
@@ -793,7 +816,7 @@ exports.getNewlyAdded = async (req, res, next) => {
     }
 
     let distanceIndex = 0;
-    const businessesWithDetails = completeBusinesses.map(business => {
+    const businessesWithDetails = finalBusinesses.map(business => {
       let distance = null;
       if (longitude && latitude && business.location?.coordinates?.coordinates) {
         if (distances?.length > distanceIndex) {
@@ -851,7 +874,8 @@ exports.getRecents = async (req, res, next) => {
       limit = 15,
       category,
       priceRange,
-      openedStatus
+      openedStatus,
+      completeProfile = false
     } = value;
 
     // Get user's recent views from ClickTracking (targetType: 'view')
@@ -989,17 +1013,22 @@ exports.getRecents = async (req, res, next) => {
 
     const topBusinesses = businessesWithViewInfo.slice(0, limit).map(item => item.business);
 
-    // Filter businesses with complete profiles
-    const completeBusinesses = [];
-    for (const business of topBusinesses) {
-      if (await hasCompleteProfile(business)) {
-        completeBusinesses.push(business);
+    // Filter businesses with complete profiles if requested
+    let finalBusinesses = topBusinesses;
+    if (completeProfile) {
+      const completeBusinesses = [];
+      for (const business of topBusinesses) {
+        const validationResult = await hasCompleteProfileWithDetails(business);
+        if (validationResult.isComplete) {
+          completeBusinesses.push(business);
+        }
       }
+      finalBusinesses = completeBusinesses;
     }
 
     let distances = [];
     if (longitude && latitude) {
-      const businessLocations = completeBusinesses
+      const businessLocations = finalBusinesses
         .filter(business => business.location?.coordinates?.coordinates)
         .map(business => ({
           lat: business.location.coordinates.coordinates[1],
@@ -1012,7 +1041,7 @@ exports.getRecents = async (req, res, next) => {
     }
 
     let distanceIndex = 0;
-    const businessesWithDetails = completeBusinesses.map(business => {
+    const businessesWithDetails = finalBusinesses.map(business => {
       let distance = null;
       if (longitude && latitude && business.location?.coordinates?.coordinates) {
         if (distances?.length > distanceIndex) {
@@ -1082,7 +1111,8 @@ exports.exploreBusinesses = async (req, res, next) => {
       search,
       toprated = false,
       opennow = false,
-      nearby = false
+      nearby = false,
+      completeProfile = false
     } = value;
 
 
@@ -1273,17 +1303,22 @@ exports.exploreBusinesses = async (req, res, next) => {
 
     console.log(`✅ QUERY RESULTS: Found ${businesses.length} businesses`);
 
-    // Filter businesses with complete profiles
-    const completeBusinesses = [];
-    for (const business of businesses) {
-      if (await hasCompleteProfile(business)) {
-        completeBusinesses.push(business);
+    // Filter businesses with complete profiles if requested
+    let finalBusinesses = businesses;
+    if (completeProfile) {
+      const completeBusinesses = [];
+      for (const business of businesses) {
+        const validationResult = await hasCompleteProfileWithDetails(business);
+        if (validationResult.isComplete) {
+          completeBusinesses.push(business);
+        }
       }
+      finalBusinesses = completeBusinesses;
     }
 
     // Apply pagination after filtering
-    const paginatedBusinesses = completeBusinesses.slice(skip, skip + limit);
-    const filteredTotalCount = completeBusinesses.length;
+    const paginatedBusinesses = finalBusinesses.slice(skip, skip + limit);
+    const filteredTotalCount = finalBusinesses.length;
 
     // Add distance and additional info
     console.log('🔧 Enhancing business data with distance and status...');

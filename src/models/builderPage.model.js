@@ -127,6 +127,10 @@ const builderPageSchema = new mongoose.Schema(
       type: Boolean,
       default: true,
     },
+    isAutoShade: {
+      type: Boolean,
+      default: false,
+    },
     location: {
       type: String,
       trim: true,
