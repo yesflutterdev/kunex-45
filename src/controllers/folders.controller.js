@@ -696,11 +696,18 @@ exports.getFolderBusinessPages = async (req, res, next) => {
     };
 
     for (const favorite of favorites) {
+      // Properly convert folderId to string
+      const folderIdString = favorite.folderId 
+        ? (typeof favorite.folderId === 'string' ? favorite.folderId : favorite.folderId.toString())
+        : folderId; // Fallback to route param if not in favorite
+      
       let itemData = {
         _id: favorite._id,
         id: null, // Page/item ID
         businessId: null, // BusinessProfile ID
-        folderId: favorite.folderId.toString(), // Folder ID
+        pageId: null, // BuilderPage ID (for Page type)
+        folderId: folderIdString, // Folder ID (properly converted)
+        favoriteCount: 0, // Favorites count
         title: '',
         slug: '',
         description: '',
@@ -714,20 +721,34 @@ exports.getFolderBusinessPages = async (req, res, next) => {
 
       // Process based on favorite type and available data
       if (favorite.type === 'Page' && favorite.pageData) {
-        // Get businessId from BuilderPage or BusinessProfile
+        // Get businessId, pageId, and favoriteCount from BuilderPage or BusinessProfile
         const BuilderPage = require('../models/builderPage.model');
         const BusinessProfile = require('../models/businessProfile.model');
         let businessId = null;
+        let pageId = null;
+        let favoriteCount = favorite.pageData.favoriteCount || 0; // From pageData if available
         
         // Try BuilderPage first
-        const page = await BuilderPage.findById(favorite.pageData._id).select('businessId').lean();
-        if (page?.businessId) {
-          businessId = page.businessId.toString();
+        const page = await BuilderPage.findById(favorite.pageData._id).select('businessId _id').lean();
+        if (page) {
+          pageId = page._id.toString(); // BuilderPage ID
+          if (page.businessId) {
+            businessId = page.businessId.toString();
+            // Get favoriteCount from BusinessProfile
+            const business = await BusinessProfile.findById(page.businessId)
+              .select('metrics.favoriteCount').lean();
+            if (business?.metrics?.favoriteCount !== undefined) {
+              favoriteCount = business.metrics.favoriteCount;
+            }
+          }
         } else {
           // If not found in BuilderPage, check if it's a BusinessProfile ID
-          const business = await BusinessProfile.findById(favorite.pageData._id).select('_id').lean();
+          const business = await BusinessProfile.findById(favorite.pageData._id)
+            .select('_id builderPageId metrics.favoriteCount').lean();
           if (business) {
             businessId = business._id.toString();
+            pageId = business.builderPageId ? business.builderPageId.toString() : null;
+            favoriteCount = business.metrics?.favoriteCount || 0;
           }
         }
         
@@ -736,6 +757,8 @@ exports.getFolderBusinessPages = async (req, res, next) => {
           _id: favorite.pageData._id,
           id: favorite.pageData._id, // Page ID (BuilderPage ID or BusinessProfile ID)
           businessId: businessId, // BusinessProfile ID
+          pageId: pageId, // BuilderPage ID
+          favoriteCount: favoriteCount, // Favorites count
           title: favorite.pageData.title,
           slug: favorite.pageData.slug,
           description: favorite.pageData.description,
@@ -878,11 +901,21 @@ exports.getFolderBusinessPages = async (req, res, next) => {
         
       } else if (favorite.type === 'BusinessProfile' && favorite.widgetData) {
         // For BusinessProfile type, widgetId is the BusinessProfile ID
+        // Get favoriteCount and pageId from BusinessProfile
+        const BusinessProfile = require('../models/businessProfile.model');
+        const business = await BusinessProfile.findById(favorite.widgetId)
+          .select('_id builderPageId metrics.favoriteCount').lean();
+        
+        const favoriteCount = business?.metrics?.favoriteCount || 0;
+        const pageId = business?.builderPageId ? business.builderPageId.toString() : null;
+        
         itemData = {
           ...itemData,
           _id: favorite.widgetData._id,
           id: favorite.widgetData._id, // BusinessProfile ID
           businessId: favorite.widgetId.toString(), // BusinessProfile ID (same as widgetId)
+          pageId: pageId, // BuilderPage ID
+          favoriteCount: favoriteCount, // Favorites count
           title: favorite.widgetData.name,
           slug: favorite.widgetData.name.toLowerCase().replace(/\s+/g, '-'),
           description: `Business: ${favorite.widgetData.name}`,
@@ -1584,7 +1617,7 @@ exports.getFoldersGroupedByIndustry = async (req, res, next) => {
         const businessProfiles = await BusinessProfile.find({
           _id: { $in: businessProfileIds }
         })
-          .select('_id businessName username logo coverImage industry priceRange location.address location.city location.state location.country completionPercentage builderPageId createdAt updatedAt')
+          .select('_id businessName username logo coverImage industry priceRange location.address location.city location.state location.country completionPercentage builderPageId metrics.favoriteCount createdAt updatedAt')
           .populate('userId', 'firstName lastName')
           .lean();
 
@@ -1600,6 +1633,9 @@ exports.getFoldersGroupedByIndustry = async (req, res, next) => {
           
           industries[industry].push({
             _id: profile._id,
+            businessId: profile._id.toString(), // BusinessProfile ID
+            pageId: profile.builderPageId ? profile.builderPageId.toString() : null, // BuilderPage ID
+            favoritesCount: profile.metrics?.favoriteCount || 0, // Favorites count
             userId: profile.userId,
             businessName: profile.businessName,
             username: profile.username,
@@ -1614,7 +1650,7 @@ exports.getFoldersGroupedByIndustry = async (req, res, next) => {
               country: profile.location?.country || ''
             },
             completionPercentage: profile.completionPercentage,
-            builderPageId: profile.builderPageId,
+            builderPageId: profile.builderPageId, // Keep for backward compatibility
             createdAt: profile.createdAt,
             updatedAt: profile.updatedAt
           });
