@@ -6,7 +6,22 @@ const PageReport = require('../models/pagereport.model');
 const { uploadToCloudinary, deleteImage } = require('../utils/cloudinary');
 const { incrementIndustryViewCount, validateIndustryAndSubcategory } = require('../utils/industryUtils');
 
-// Create a new builder page
+function formatPageResponse(page) {
+  if (!page) return null;
+
+  const pageObj = page.toObject ? page.toObject() : { ...page };
+  const favoriteCount = pageObj.businessId?.metrics?.favoriteCount || 0;
+  const viewCount = pageObj.analytics?.pageViews || 0;
+
+  const { analytics, ...rest } = pageObj;
+
+  return {
+    ...rest,
+    favoriteCount,
+    viewCount
+  };
+}
+
 exports.createPage = async (req, res, next) => {
   try {
     const userId = req.user.id;
@@ -91,7 +106,7 @@ exports.createPage = async (req, res, next) => {
     res.status(201).json({
       success: true,
       message: 'Page created successfully',
-      data: { page }
+      data: { page: formatPageResponse(page) }
     });
   } catch (error) {
     next(error);
@@ -153,13 +168,7 @@ exports.getPages = async (req, res, next) => {
       .limit(parseInt(limit))
       .lean();
 
-    const pagesWithFavorites = pages.map(page => {
-      const favoriteCount = page.businessId?.metrics?.favoriteCount || 0;
-      return {
-        ...page,
-        favoriteCount
-      };
-    });
+    const pagesWithFavorites = pages.map(page => formatPageResponse(page));
 
     const totalPages = await BuilderPage.countDocuments(query);
     const totalItems = totalPages;
@@ -201,15 +210,10 @@ exports.getPageById = async (req, res, next) => {
 
     const widgets = await Widget.find({ pageId });
 
-    const favoriteCount = page.businessId?.metrics?.favoriteCount || 0;
-
     res.status(200).json({
       success: true,
       data: {
-        page: {
-          ...page.toObject(),
-          favoriteCount
-        },
+        page: formatPageResponse(page),
         widgets,
         currentVersion: page.currentVersion
       }
@@ -253,15 +257,10 @@ exports.getPublicPage = async (req, res, next) => {
 
     const widgets = await Widget.find({ pageId: page._id });
 
-    const favoriteCount = page.businessId?.metrics?.favoriteCount || 0;
-
     res.status(200).json({
       success: true,
       data: {
-        page: {
-          ...page.toObject(),
-          favoriteCount
-        },
+        page: formatPageResponse(page),
         widgets
       }
     });
@@ -437,7 +436,7 @@ exports.updatePage = async (req, res, next) => {
     res.status(200).json({
       success: true,
       message: 'Page updated successfully',
-      data: { page }
+      data: { page: formatPageResponse(page) }
     });
   } catch (error) {
     next(error);
@@ -492,7 +491,7 @@ exports.publishPage = async (req, res, next) => {
     res.status(200).json({
       success: true,
       message: 'Page published successfully',
-      data: { page }
+      data: { page: formatPageResponse(page) }
     });
   } catch (error) {
     next(error);
@@ -518,7 +517,7 @@ exports.unpublishPage = async (req, res, next) => {
     res.status(200).json({
       success: true,
       message: 'Page unpublished successfully',
-      data: { page }
+      data: { page: formatPageResponse(page) }
     });
   } catch (error) {
     next(error);
@@ -581,7 +580,7 @@ exports.clonePage = async (req, res, next) => {
     res.status(201).json({
       success: true,
       message: 'Page cloned successfully',
-      data: { page: clonedPage }
+      data: { page: formatPageResponse(clonedPage) }
     });
   } catch (error) {
     next(error);
@@ -641,7 +640,7 @@ exports.revertToVersion = async (req, res, next) => {
     res.status(200).json({
       success: true,
       message: 'Page reverted successfully',
-      data: { page }
+      data: { page: formatPageResponse(page) }
     });
   } catch (error) {
     if (error.message === 'Version not found') {
