@@ -342,12 +342,12 @@ const widgetSchema = new mongoose.Schema(
           }
         ],
 
-        // Event fields
         event: [
           {
+            _id: { type: mongoose.Schema.Types.ObjectId, default: () => new mongoose.Types.ObjectId() },
             eventImage: { type: String, default: '' },
             title: { type: String, default: '' },
-            date: { type: String, default: '' }, // 26 Oct 2024 format
+            date: { type: String, default: '' },
             location: { type: String, default: '' },
             ticketUrl: { type: String, default: '' },
             enddate: { type: String, default: '' },
@@ -642,7 +642,24 @@ const widgetSchema = new mongoose.Schema(
   },
   {
     timestamps: true,
-    toJSON: { virtuals: true },
+    toJSON: {
+      virtuals: true,
+      transform: function(doc, ret) {
+        if (ret.settings?.specific?.event && Array.isArray(ret.settings.specific.event)) {
+          ret.settings.specific.event = ret.settings.specific.event.map(event => {
+            const { id, ...eventData } = event;
+            return eventData;
+          });
+        }
+        if (ret.settings?.specific?.products && Array.isArray(ret.settings.specific.products)) {
+          ret.settings.specific.products = ret.settings.specific.products.map(product => {
+            const { id, ...productData } = product;
+            return productData;
+          });
+        }
+        return ret;
+      }
+    },
     toObject: { virtuals: true }
   }
 );

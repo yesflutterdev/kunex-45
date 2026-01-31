@@ -1363,6 +1363,19 @@ exports.trackView = async (req, res) => {
     
     await viewTracking.save();
     
+    // Increment BusinessProfile.metrics.viewCount if target is a business or builderPage
+    if (targetData.targetType === 'business') {
+      // Direct BusinessProfile view
+      await BusinessProfile.findByIdAndUpdate(targetId, {
+        $inc: { 'metrics.viewCount': 1 }
+      });
+    } else if (targetData.targetType === 'builderPage' && targetData.businessId) {
+      // BuilderPage view - also increment linked BusinessProfile
+      await BusinessProfile.findByIdAndUpdate(targetData.businessId, {
+        $inc: { 'metrics.viewCount': 1 }
+      });
+    }
+    
     console.log('View tracked successfully:', viewTracking._id);
     
     res.json({
@@ -1529,9 +1542,22 @@ const getCorrectTargetData = async (targetId) => {
       return {
         targetType: 'builderPage',
         ownerId: builderPage.userId,
+        businessId: builderPage.businessId, // Include businessId for syncing
         title: builderPage.title || 'Builder Page',
         thumbnail: builderPage.cover || builderPage.logo || '',
         url: `kunex.app/${builderPage.slug || targetId}`
+      };
+    }
+    
+    // Check if it's a BusinessProfile
+    const businessProfile = await BusinessProfile.findById(targetId);
+    if (businessProfile) {
+      return {
+        targetType: 'business',
+        ownerId: businessProfile.userId,
+        title: businessProfile.businessName || 'Business Profile',
+        thumbnail: businessProfile.coverImage || businessProfile.logo || '',
+        url: `kunex.app/${businessProfile.username || targetId}`
       };
     }
     

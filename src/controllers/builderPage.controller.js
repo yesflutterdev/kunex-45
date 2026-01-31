@@ -11,7 +11,7 @@ function formatPageResponse(page) {
 
   const pageObj = page.toObject ? page.toObject() : { ...page };
   const favoriteCount = pageObj.businessId?.metrics?.favoriteCount || 0;
-  const viewCount = pageObj.analytics?.pageViews || 0;
+  const viewCount = pageObj.businessId?.metrics?.viewCount || 0;
 
   const { analytics, ...rest } = pageObj;
 
@@ -162,7 +162,7 @@ exports.getPages = async (req, res, next) => {
     const skip = (parseInt(page) - 1) * parseInt(limit);
 
     const pages = await BuilderPage.find(query)
-      .populate('businessId', 'businessName username logo metrics.favoriteCount')
+      .populate('businessId', 'businessName username logo metrics.favoriteCount metrics.viewCount')
       .sort(sort)
       .skip(skip)
       .limit(parseInt(limit))
@@ -198,7 +198,7 @@ exports.getPageById = async (req, res, next) => {
     const { pageId } = req.params;
 
     const page = await BuilderPage.findOne({ _id: pageId, userId })
-      .populate('businessId', 'businessName username logo metrics.favoriteCount')
+      .populate('businessId', 'businessName username logo metrics.favoriteCount metrics.viewCount')
       .populate('widgets');
 
     if (!page) {
@@ -243,7 +243,7 @@ exports.getPublicPage = async (req, res, next) => {
     }
 
     const page = await BuilderPage.findOne(query)
-      .populate('businessId', 'businessName username logo metrics.favoriteCount')
+      .populate('businessId', 'businessName username logo metrics.favoriteCount metrics.viewCount')
       .populate('widgets');
 
     if (!page) {

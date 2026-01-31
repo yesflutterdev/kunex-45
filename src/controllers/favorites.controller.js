@@ -15,7 +15,6 @@ const {
   validateFavoritedBusinessDetails
 } = require('../utils/favoritesValidation');
 
-// Add widget to favorites
 exports.addFavorite = async (req, res, next) => {
   try {
     const { error, value } = validateFavorite(req.body);
@@ -28,25 +27,21 @@ exports.addFavorite = async (req, res, next) => {
     }
 
     const userId = req.user.id;
-    const { type, widgetId, productId, folderId, notes, tags, rating, isPrivate, metadata } = value;
+    const { type, widgetId, productId, eventId, folderId, notes, tags, rating, isPrivate, metadata } = value;
 
-    // Check if content exists based on type
     let content;
     let specificProduct = null;
     
     switch (type) {
       case 'Page':
-        // content = await BuilderPage.findById(widgetId);
         content = await BusinessProfile.findById(widgetId);
         if (content) {
-          // Mark this as a BusinessProfile for response handling
           content._isBusinessProfile = true;
         }
         break;
       case 'Product':
         content = await Widget.findById(widgetId);
         if (content && productId) {
-          // Find the specific product within the products array
           const products = content.settings?.specific?.products || [];
           specificProduct = products.find(p => p._id?.toString() === productId);
           if (!specificProduct) {
@@ -58,8 +53,20 @@ exports.addFavorite = async (req, res, next) => {
         }
         break;
       case 'Promotion':
+        content = await Widget.findById(widgetId);
+        break;
       case 'Event':
         content = await Widget.findById(widgetId);
+        if (content && eventId) {
+          const events = content.settings?.specific?.event || [];
+          const specificEvent = events.find(e => e._id?.toString() === eventId);
+          if (!specificEvent) {
+            return res.status(404).json({
+              success: false,
+              message: 'Event not found in widget',
+            });
+          }
+        }
         break;
       case 'BusinessProfile':
         content = await BusinessProfile.findById(widgetId);
@@ -78,16 +85,16 @@ exports.addFavorite = async (req, res, next) => {
       });
     }
 
-    // Check if already favorited - if so, remove it (toggle behavior)
-    const existingFavorite = await Favorite.findOne({ 
-      userId, 
-      widgetId, 
-      productId: productId || null 
-    });
+    const query = { userId, widgetId, type };
+    if (type === 'Product') {
+      query.productId = productId;
+    } else if (type === 'Event') {
+      query.eventId = eventId;
+    }
+    const existingFavorite = await Favorite.findOne(query);
     if (existingFavorite) {
       await existingFavorite.deleteOne();
       
-      // Decrement favoriteCount for BusinessProfile and BuilderPage if it's a Page type
       if (type === 'Page' && content && content._isBusinessProfile) {
         const businessProfile = await BusinessProfile.findById(widgetId);
         if (businessProfile) {
@@ -96,7 +103,6 @@ exports.addFavorite = async (req, res, next) => {
             await businessProfile.save();
           }
           
-          // Sync with BuilderPage if it exists
           if (businessProfile.builderPageId) {
             const builderPage = await BuilderPage.findById(businessProfile.builderPageId);
             if (builderPage && builderPage.analytics.favoriteCount > 0) {
@@ -117,7 +123,6 @@ exports.addFavorite = async (req, res, next) => {
       });
     }
 
-    // Get or create default folder if no folder specified
     let targetFolder;
     if (folderId) {
       targetFolder = await Folder.findOne({ _id: folderId, userId });
@@ -128,20 +133,16 @@ exports.addFavorite = async (req, res, next) => {
         });
       }
     } else {
-      // getDefaultFolder now automatically creates one if it doesn't exist
       targetFolder = await Folder.getDefaultFolder(userId);
       if (!targetFolder) {
-        // Fallback: try to create manually if getDefaultFolder failed
         targetFolder = await Folder.createDefaultFolder(userId);
       }
     }
 
-    // Create favorite
-    const favorite = new Favorite({
+    const favoriteData = {
       userId,
       type,
       widgetId,
-      productId: productId || undefined,
       folderId: targetFolder._id,
       notes,
       tags,
@@ -151,18 +152,24 @@ exports.addFavorite = async (req, res, next) => {
         ...metadata,
         deviceType: req.headers['user-agent']?.includes('Mobile') ? 'mobile' : 'desktop'
       }
-    });
+    };
+
+    if (type === 'Product') {
+      favoriteData.productId = productId;
+    } else if (type === 'Event') {
+      favoriteData.eventId = eventId;
+    }
+
+    const favorite = new Favorite(favoriteData);
 
     await favorite.save();
 
-    // Increment favoriteCount for BusinessProfile and BuilderPage if it's a Page type
     if (type === 'Page' && content && content._isBusinessProfile) {
       const businessProfile = await BusinessProfile.findById(widgetId);
       if (businessProfile) {
         businessProfile.metrics.favoriteCount += 1;
         await businessProfile.save();
         
-        // Sync with BuilderPage if it exists
         if (businessProfile.builderPageId) {
           const builderPage = await BuilderPage.findById(businessProfile.builderPageId);
           if (builderPage) {
@@ -173,7 +180,6 @@ exports.addFavorite = async (req, res, next) => {
       }
     }
 
-    // Populate the response based on content type
     let populatedFavorite = await Favorite.findById(favorite._id)
       .populate({
         path: 'folderId',
@@ -181,11 +187,8 @@ exports.addFavorite = async (req, res, next) => {
       })
       .lean();
 
-    // Add content data based on type
     if (type === 'Page') {
       if (content._isBusinessProfile) {
-        // Handle BusinessProfile as Page
-        // Re-fetch to get updated favoriteCount and ensure we have industry
         const businessProfile = await BusinessProfile.findById(widgetId)
           .select('_id businessName username description logo coverImage industry priceRange location metrics.favoriteCount')
           .lean();
@@ -205,7 +208,6 @@ exports.addFavorite = async (req, res, next) => {
           favoriteCount: businessProfile.metrics?.favoriteCount || 0
         };
       } else {
-        // Handle BuilderPage as Page
         populatedFavorite.pageData = {
           _id: content._id,
           title: content.title,
@@ -231,6 +233,33 @@ exports.addFavorite = async (req, res, next) => {
         widgetName: content.name,
         widgetType: content.type
       };
+    } else if (type === 'Event' && eventId) {
+      const events = content.settings?.specific?.event || [];
+      const specificEvent = events.find(e => e._id?.toString() === eventId);
+      if (specificEvent) {
+        populatedFavorite.eventData = {
+          _id: eventId,
+          title: specificEvent.title,
+          eventImage: specificEvent.eventImage,
+          date: specificEvent.date,
+          location: specificEvent.location,
+          ticketUrl: specificEvent.ticketUrl,
+          enddate: specificEvent.enddate,
+          category: specificEvent.category,
+          widgetId: content._id,
+          widgetName: content.name,
+          widgetType: content.type
+        };
+      } else {
+        populatedFavorite.widgetData = {
+          _id: content._id,
+          name: content.name,
+          type: content.type,
+          settings: content.settings,
+          layout: content.layout,
+          status: content.status
+        };
+      }
     } else {
       populatedFavorite.widgetData = {
         _id: content._id,
@@ -255,7 +284,6 @@ exports.addFavorite = async (req, res, next) => {
   }
 };
 
-// Get user's favorites grouped by type (main favorites view)
 exports.getFavorites = async (req, res, next) => {
   try {
     const { error, value } = validateGetFavorites(req.query);
@@ -270,7 +298,6 @@ exports.getFavorites = async (req, res, next) => {
     const userId = req.user.id;
     const { folderId, tags, rating, search, isPrivate } = value;
 
-    // Build query options
     const options = {
       folderId,
       tags: Array.isArray(tags) ? tags : (tags ? [tags] : undefined),
@@ -282,10 +309,8 @@ exports.getFavorites = async (req, res, next) => {
       options.isPrivate = isPrivate;
     }
 
-    // Get favorites grouped by type
     const favoritesByType = await Favorite.getFavoritesGroupedByType(userId, options);
 
-    // Transform to the expected response format
     const response = {
       pages: [],
       products: [],
@@ -300,7 +325,6 @@ exports.getFavorites = async (req, res, next) => {
       }
     });
 
-    // Get total count for pagination
     const query = { userId };
     if (folderId) query.folderId = folderId;
     if (tags) query.tags = { $in: Array.isArray(tags) ? tags : [tags] };
@@ -329,7 +353,6 @@ exports.getFavorites = async (req, res, next) => {
   }
 };
 
-// Get user's favorites with filtering and search (detailed view)
 exports.getFavoritesDetailed = async (req, res, next) => {
   try {
     const { error, value } = validateGetFavorites(req.query);
@@ -360,10 +383,8 @@ exports.getFavoritesDetailed = async (req, res, next) => {
       options.isPrivate = isPrivate;
     }
 
-    // Get favorites
     const favorites = await Favorite.getUserFavoritesByType(userId, options);
 
-    // Get total count for pagination
     const query = { userId };
     if (folderId) query.folderId = folderId;
     if (tags) query.tags = { $in: Array.isArray(tags) ? tags : [tags] };
@@ -401,7 +422,6 @@ exports.getFavoritesDetailed = async (req, res, next) => {
   }
 };
 
-// Get single favorite details
 exports.getFavorite = async (req, res, next) => {
   try {
     const { favoriteId } = req.params;
@@ -417,7 +437,6 @@ exports.getFavorite = async (req, res, next) => {
     if (favorite) {
       // Add content data based on type
       if (favorite.type === 'Page') {
-        // Try BuilderPage first
         let page = await BuilderPage.findById(favorite.widgetId).lean();
         if (page) {
           favorite.pageData = {
@@ -433,7 +452,6 @@ exports.getFavorite = async (req, res, next) => {
             location: page.location
           };
         } else {
-          // If not found in BuilderPage, try BusinessProfile
           const businessProfile = await BusinessProfile.findById(favorite.widgetId).lean();
           if (businessProfile) {
             favorite.pageData = {
@@ -472,7 +490,6 @@ exports.getFavorite = async (req, res, next) => {
       });
     }
 
-    // Increment view count
     await Favorite.findByIdAndUpdate(favoriteId, {
       $inc: { 'analytics.viewCount': 1 },
       $set: { 'analytics.lastInteraction': new Date() }
@@ -487,7 +504,6 @@ exports.getFavorite = async (req, res, next) => {
   }
 };
 
-// Update favorite
 exports.updateFavorite = async (req, res, next) => {
   try {
     const { favoriteId } = req.params;
@@ -524,7 +540,6 @@ exports.updateFavorite = async (req, res, next) => {
       }
     }
 
-    // Update favorite
     const updateData = {};
     if (folderId) updateData.folderId = folderId;
     if (notes !== undefined) updateData.notes = notes;
@@ -605,7 +620,6 @@ exports.updateFavorite = async (req, res, next) => {
   }
 };
 
-// Remove favorite
 exports.removeFavorite = async (req, res, next) => {
   try {
     const { favoriteId } = req.params;
@@ -628,7 +642,6 @@ exports.removeFavorite = async (req, res, next) => {
           await businessProfile.save();
         }
         
-        // Sync with BuilderPage if it exists
         if (businessProfile.builderPageId) {
           const builderPage = await BuilderPage.findById(businessProfile.builderPageId);
           if (builderPage && builderPage.analytics.favoriteCount > 0) {
@@ -650,7 +663,6 @@ exports.removeFavorite = async (req, res, next) => {
   }
 };
 
-// Check if widget is favorited
 exports.checkFavoriteStatus = async (req, res, next) => {
   try {
     const { widgetId } = req.params;
@@ -672,7 +684,6 @@ exports.checkFavoriteStatus = async (req, res, next) => {
   }
 };
 
-// Get popular tags for user
 exports.getPopularTags = async (req, res, next) => {
   try {
     const userId = req.user.id;
@@ -689,7 +700,6 @@ exports.getPopularTags = async (req, res, next) => {
   }
 };
 
-// Bulk operations on favorites
 exports.bulkOperation = async (req, res, next) => {
   try {
     const { error, value } = validateBulkFavoriteOperation(req.body);
@@ -773,7 +783,6 @@ exports.bulkOperation = async (req, res, next) => {
   }
 };
 
-// Get favorites analytics
 exports.getAnalytics = async (req, res, next) => {
   try {
     const { error, value } = validateAnalyticsQuery(req.query);
@@ -788,7 +797,6 @@ exports.getAnalytics = async (req, res, next) => {
     const userId = req.user.id;
     const { timeframe, folderId, groupBy, limit } = value;
 
-    // Calculate date range
     const now = new Date();
     let startDate = new Date();
     
@@ -839,7 +847,6 @@ exports.getAnalytics = async (req, res, next) => {
         };
         break;
       default:
-        // Group by time periods
         const dateFormat = groupBy === 'day' ? '%Y-%m-%d' : 
                           groupBy === 'week' ? '%Y-%U' : '%Y-%m';
         groupStage = {
@@ -859,7 +866,6 @@ exports.getAnalytics = async (req, res, next) => {
 
     const analytics = await Favorite.aggregate(pipeline);
 
-    // Get summary statistics
     const summary = await Favorite.aggregate([
       { $match: { userId: new mongoose.Types.ObjectId(userId) } },
       {
@@ -888,7 +894,6 @@ exports.getAnalytics = async (req, res, next) => {
   }
 };
 
-// Set reminder for favorite
 exports.setReminder = async (req, res, next) => {
   try {
     const { error, value } = validateReminderSettings(req.body);
@@ -928,7 +933,6 @@ exports.setReminder = async (req, res, next) => {
   }
 };
 
-// Get upcoming reminders
 exports.getUpcomingReminders = async (req, res, next) => {
   try {
     const userId = req.user.id;

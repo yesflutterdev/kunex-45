@@ -1,6 +1,5 @@
 const Joi = require('joi');
 
-// Validate folder creation/update
 exports.validateFolder = (data) => {
   const schema = Joi.object({
     name: Joi.string().trim().min(1).max(100).required(),
@@ -20,7 +19,6 @@ exports.validateFolder = (data) => {
   return schema.validate(data, { abortEarly: false });
 };
 
-// Validate folder update (partial)
 exports.validateFolderUpdate = (data) => {
   const schema = Joi.object({
     name: Joi.string().trim().min(1).max(100),
@@ -35,18 +33,22 @@ exports.validateFolderUpdate = (data) => {
         'business', 'personal', 'work', 'travel', 'food', 'entertainment', 'other'
       )
     })
-  }).min(1); // At least one field must be provided
+  }).min(1);
 
   return schema.validate(data, { abortEarly: false });
 };
 
-// Validate favorite creation/update
 exports.validateFavorite = (data) => {
   const schema = Joi.object({
     type: Joi.string().valid('Page', 'Product', 'Promotion', 'Event', 'BusinessProfile').required(),
     widgetId: Joi.string().pattern(/^[0-9a-fA-F]{24}$/).required(),
     productId: Joi.string().when('type', {
       is: 'Product',
+      then: Joi.required(),
+      otherwise: Joi.forbidden()
+    }),
+    eventId: Joi.string().when('type', {
+      is: 'Event',
       then: Joi.required(),
       otherwise: Joi.forbidden()
     }),
@@ -75,7 +77,6 @@ exports.validateFavorite = (data) => {
   return schema.validate(data, { abortEarly: false });
 };
 
-// Validate favorite update (partial)
 exports.validateFavoriteUpdate = (data) => {
   const schema = Joi.object({
     folderId: Joi.string().pattern(/^[0-9a-fA-F]{24}$/),
@@ -98,12 +99,11 @@ exports.validateFavoriteUpdate = (data) => {
       reminderDate: Joi.date().min('now'),
       reminderNote: Joi.string().trim().max(200)
     })
-  }).min(1); // At least one field must be provided
+  }).min(1);
 
   return schema.validate(data, { abortEarly: false });
 };
 
-// Validate get folders query parameters
 exports.validateGetFolders = (data) => {
   const schema = Joi.object({
     includeEmpty: Joi.boolean().default(true),
@@ -120,7 +120,6 @@ exports.validateGetFolders = (data) => {
   return schema.validate(data, { abortEarly: false });
 };
 
-// Validate get favorites query parameters
 exports.validateGetFavorites = (data) => {
   const schema = Joi.object({
     folderId: Joi.string().pattern(/^[0-9a-fA-F]{24}$/),
@@ -142,7 +141,6 @@ exports.validateGetFavorites = (data) => {
   return schema.validate(data, { abortEarly: false });
 };
 
-// Validate folder search query parameters
 exports.validateFolderSearch = (data) => {
   const schema = Joi.object({
     query: Joi.string().trim().min(1).max(100).required(),
@@ -153,7 +151,6 @@ exports.validateFolderSearch = (data) => {
   return schema.validate(data, { abortEarly: false });
 };
 
-// Validate bulk operations
 exports.validateBulkFavoriteOperation = (data) => {
   const schema = Joi.object({
     favoriteIds: Joi.array()
@@ -177,7 +174,6 @@ exports.validateBulkFavoriteOperation = (data) => {
   return schema.validate(data, { abortEarly: false });
 };
 
-// Validate folder reorder
 exports.validateFolderReorder = (data) => {
   const schema = Joi.object({
     folderOrders: Joi.array()
@@ -195,7 +191,6 @@ exports.validateFolderReorder = (data) => {
   return schema.validate(data, { abortEarly: false });
 };
 
-// Validate analytics query parameters
 exports.validateAnalyticsQuery = (data) => {
   const schema = Joi.object({
     timeframe: Joi.string().valid('day', 'week', 'month', 'year', 'all').default('month'),
@@ -207,7 +202,6 @@ exports.validateAnalyticsQuery = (data) => {
   return schema.validate(data, { abortEarly: false });
 };
 
-// Validate reminder settings
 exports.validateReminderSettings = (data) => {
   const schema = Joi.object({
     favoriteId: Joi.string().pattern(/^[0-9a-fA-F]{24}$/).required(),
@@ -218,7 +212,6 @@ exports.validateReminderSettings = (data) => {
   return schema.validate(data, { abortEarly: false });
 };
 
-// Validate export preferences
 exports.validateExportPreferences = (data) => {
   const schema = Joi.object({
     format: Joi.string().valid('json', 'csv', 'pdf').default('json'),
@@ -235,7 +228,6 @@ exports.validateExportPreferences = (data) => {
   return schema.validate(data, { abortEarly: false });
 };
 
-// Validate get favorited business widgets query
 exports.validateFavoritedBusinessWidgets = (data) => {
   const schema = Joi.object({
     widgetType: Joi.string().trim(),
@@ -249,7 +241,6 @@ exports.validateFavoritedBusinessWidgets = (data) => {
   return schema.validate(data, { abortEarly: false });
 };
 
-// Validate get favorited business details query
 exports.validateFavoritedBusinessDetails = (data) => {
   const schema = Joi.object({
     pageId: Joi.string().pattern(/^[0-9a-fA-F]{24}$/),

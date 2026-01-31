@@ -18,9 +18,15 @@ const favoriteSchema = new mongoose.Schema(
       required: true
     },
     productId: {
-      type: String, // For individual products within a products widget
+      type: String,
       required: function () {
         return this.type === 'Product';
+      }
+    },
+    eventId: {
+      type: String,
+      required: function () {
+        return this.type === 'Event';
       }
     },
     folderId: {
@@ -96,26 +102,29 @@ const favoriteSchema = new mongoose.Schema(
   }
 );
 
-// Compound indexes for better query performance
 favoriteSchema.index({ userId: 1 });
 favoriteSchema.index({ widgetId: 1 });
 favoriteSchema.index({ folderId: 1 });
 favoriteSchema.index({ userId: 1, type: 1 });
-favoriteSchema.index({ userId: 1, widgetId: 1, productId: 1 }, { unique: true });
+favoriteSchema.index(
+  { userId: 1, widgetId: 1, productId: 1 },
+  { unique: true, partialFilterExpression: { type: 'Product' } }
+);
+favoriteSchema.index(
+  { userId: 1, widgetId: 1, eventId: 1 },
+  { unique: true, partialFilterExpression: { type: 'Event' } }
+);
 favoriteSchema.index({ userId: 1, folderId: 1 });
 favoriteSchema.index({ userId: 1, createdAt: -1 });
 favoriteSchema.index({ userId: 1, rating: -1 });
 favoriteSchema.index({ userId: 1, visitCount: -1 });
 favoriteSchema.index({ tags: 1 });
 favoriteSchema.index({ 'metadata.reminderDate': 1 });
-
-// Text index for search functionality
 favoriteSchema.index({
   notes: 'text',
   tags: 'text'
 });
 
-// Static method to get user's favorites grouped by type
 favoriteSchema.statics.getUserFavoritesByType = async function (userId, options = {}) {
   const {
     folderId,
@@ -151,7 +160,6 @@ favoriteSchema.statics.getUserFavoritesByType = async function (userId, options 
 
   switch (sortBy) {
     case 'name':
-      // Will be handled in populate
       break;
     case 'rating':
       sortOptions.rating = sortDirection;
@@ -181,10 +189,8 @@ favoriteSchema.statics.getUserFavoritesByType = async function (userId, options 
     .limit(limit)
     .lean();
 
-  // Populate content data based on type
   for (let favorite of favorites) {
     if (favorite.type === 'Page') {
-      // Try BuilderPage first
       let page = await mongoose.model('BuilderPage').findById(favorite.widgetId).lean();
       if (page) {
         favorite.pageData = {
@@ -200,7 +206,6 @@ favoriteSchema.statics.getUserFavoritesByType = async function (userId, options 
           location: page.location
         };
       } else {
-        // If not found in BuilderPage, try BusinessProfile
         const businessProfile = await mongoose.model('BusinessProfile').findById(favorite.widgetId)
           .select('_id businessName username description logo coverImage industry priceRange location metrics.favoriteCount')
           .lean();
@@ -226,7 +231,6 @@ favoriteSchema.statics.getUserFavoritesByType = async function (userId, options 
 
       if (widget) {
         if (favorite.type === 'Product' && favorite.productId) {
-          // Find the specific product within the products array
           const products = widget.settings?.specific?.products || [];
 
           const specificProduct = products.find(p =>
@@ -247,7 +251,33 @@ favoriteSchema.statics.getUserFavoritesByType = async function (userId, options 
               widgetType: widget.type
             };
           } else {
-            // Product not found - create widgetData as fallback
+            favorite.widgetData = {
+              _id: widget._id,
+              name: widget.name,
+              type: widget.type,
+              settings: widget.settings,
+              layout: widget.layout,
+              status: widget.status
+            };
+          }
+        } else if (favorite.type === 'Event' && favorite.eventId) {
+          const events = widget.settings?.specific?.event || [];
+          const specificEvent = events.find(e => e._id?.toString() === favorite.eventId);
+          if (specificEvent) {
+            favorite.eventData = {
+              _id: favorite.eventId,
+              title: specificEvent.title,
+              eventImage: specificEvent.eventImage,
+              date: specificEvent.date,
+              location: specificEvent.location,
+              ticketUrl: specificEvent.ticketUrl,
+              enddate: specificEvent.enddate,
+              category: specificEvent.category,
+              widgetId: widget._id,
+              widgetName: widget.name,
+              widgetType: widget.type
+            };
+          } else {
             favorite.widgetData = {
               _id: widget._id,
               name: widget.name,
@@ -258,7 +288,6 @@ favoriteSchema.statics.getUserFavoritesByType = async function (userId, options 
             };
           }
         } else {
-          // For other types (Promotion, Event) or Product without specific productId
           favorite.widgetData = {
             _id: widget._id,
             name: widget.name,
@@ -275,7 +304,6 @@ favoriteSchema.statics.getUserFavoritesByType = async function (userId, options 
   return favorites;
 };
 
-// Static method to get favorites grouped by type for the main favorites view
 favoriteSchema.statics.getFavoritesGroupedByType = async function (userId, options = {}) {
   const {
     folderId,
@@ -302,7 +330,6 @@ favoriteSchema.statics.getFavoritesGroupedByType = async function (userId, optio
     query.$text = { $search: search };
   }
 
-  // Get all favorites first
   const favorites = await this.find(query)
     .populate({
       path: 'folderId',
@@ -310,7 +337,6 @@ favoriteSchema.statics.getFavoritesGroupedByType = async function (userId, optio
     })
     .lean();
 
-  // Group by type and populate content data
   const groupedFavorites = {
     pages: [],
     products: [],
@@ -322,7 +348,6 @@ favoriteSchema.statics.getFavoritesGroupedByType = async function (userId, optio
     let contentData = null;
 
     if (favorite.type === 'Page') {
-      // Try BuilderPage first
       let page = await mongoose.model('BuilderPage').findById(favorite.widgetId).lean();
       if (page) {
         contentData = {
@@ -338,7 +363,6 @@ favoriteSchema.statics.getFavoritesGroupedByType = async function (userId, optio
           location: page.location
         };
       } else {
-        // If not found in BuilderPage, try BusinessProfile
         const businessProfile = await mongoose.model('BusinessProfile').findById(favorite.widgetId)
           .select('_id businessName username description logo coverImage industry priceRange location metrics.favoriteCount')
           .lean();
@@ -368,7 +392,6 @@ favoriteSchema.statics.getFavoritesGroupedByType = async function (userId, optio
         }
 
         if (favorite.type === 'Product' && favorite.productId) {
-          // Find the specific product within the products array
           const products = widget.settings?.specific?.products || [];
           const specificProduct = products.find(p => p._id?.toString() === favorite.productId);
           if (specificProduct) {
@@ -387,8 +410,40 @@ favoriteSchema.statics.getFavoritesGroupedByType = async function (userId, optio
               businessId: userPage?.businessId || null
             };
           }
+        } else if (favorite.type === 'Event' && favorite.eventId) {
+          const events = widget.settings?.specific?.event || [];
+          const specificEvent = events.find(e => e._id?.toString() === favorite.eventId);
+          if (specificEvent) {
+            contentData = {
+              _id: favorite.eventId,
+              title: specificEvent.title,
+              eventImage: specificEvent.eventImage,
+              date: specificEvent.date,
+              location: specificEvent.location,
+              ticketUrl: specificEvent.ticketUrl,
+              enddate: specificEvent.enddate,
+              category: specificEvent.category,
+              widgetId: widget._id,
+              widgetName: widget.name,
+              widgetType: widget.type,
+              pageId: widget.pageId,
+              pageLogo: userPage?.logo || null,
+              businessId: userPage?.businessId || null
+            };
+          } else {
+            contentData = {
+              _id: widget._id,
+              name: widget.name,
+              type: widget.type,
+              settings: widget.settings,
+              layout: widget.layout,
+              status: widget.status,
+              pageId: widget.pageId,
+              pageLogo: userPage?.logo || null,
+              businessId: userPage?.businessId || null
+            };
+          }
         } else {
-          // For other types (Promotion, Event) or Product without specific productId
           contentData = {
             _id: widget._id,
             name: widget.name,
@@ -423,7 +478,6 @@ favoriteSchema.statics.getFavoritesGroupedByType = async function (userId, optio
         updatedAt: favorite.updatedAt
       };
 
-      // Add to appropriate group
       const typeKey = favorite.type.toLowerCase() + 's';
       if (groupedFavorites.hasOwnProperty(typeKey)) {
         groupedFavorites[typeKey].push(favoriteData);
@@ -432,13 +486,12 @@ favoriteSchema.statics.getFavoritesGroupedByType = async function (userId, optio
   }
 
   return Object.entries(groupedFavorites).map(([type, favorites]) => ({
-    _id: type.slice(0, -1), // Remove 's' from end
+    _id: type.slice(0, -1),
     favorites,
     count: favorites.length
   }));
 };
 
-// Static method to get favorites count by folder
 favoriteSchema.statics.getFavoriteCountsByFolder = function (userId) {
   return this.aggregate([
     { $match: { userId: new mongoose.Types.ObjectId(userId) } },
@@ -476,7 +529,6 @@ favoriteSchema.statics.getFavoriteCountsByFolder = function (userId) {
   ]);
 };
 
-// Static method to get popular tags for user
 favoriteSchema.statics.getPopularTags = function (userId, limit = 20) {
   return this.aggregate([
     { $match: { userId: new mongoose.Types.ObjectId(userId) } },
@@ -501,12 +553,10 @@ favoriteSchema.statics.getPopularTags = function (userId, limit = 20) {
   ]);
 };
 
-// Static method to check if widget is favorited by user
 favoriteSchema.statics.isFavorited = function (userId, widgetId) {
   return this.findOne({ userId, widgetId }).lean();
 };
 
-// Static method to get favorites with upcoming reminders
 favoriteSchema.statics.getUpcomingReminders = function (userId, days = 7) {
   const endDate = new Date();
   endDate.setDate(endDate.getDate() + days);
@@ -526,7 +576,6 @@ favoriteSchema.statics.getUpcomingReminders = function (userId, days = 7) {
     .lean();
 };
 
-// Instance method to increment visit count
 favoriteSchema.methods.incrementVisitCount = function () {
   this.visitCount += 1;
   this.lastVisited = new Date();
@@ -534,7 +583,6 @@ favoriteSchema.methods.incrementVisitCount = function () {
   return this.save();
 };
 
-// Instance method to increment analytics
 favoriteSchema.methods.incrementAnalytics = function (type) {
   if (['viewCount', 'shareCount', 'clickCount'].includes(type)) {
     this.analytics[type] += 1;
@@ -544,7 +592,6 @@ favoriteSchema.methods.incrementAnalytics = function (type) {
   return Promise.resolve(this);
 };
 
-// Pre-save middleware to update folder item count
 favoriteSchema.post('save', async function (doc) {
   if (this.isNew) {
     const Folder = mongoose.model('Folder');
@@ -558,7 +605,6 @@ favoriteSchema.post('save', async function (doc) {
   }
 });
 
-// Pre-remove middleware to update folder item count
 favoriteSchema.post('deleteOne', { document: true, query: false }, async function (doc) {
   const Folder = mongoose.model('Folder');
   await Folder.findByIdAndUpdate(

@@ -1,10 +1,8 @@
 const mongoose = require('mongoose');
 const BusinessProfile = require('../models/businessProfile.model');
 const User = require('../models/user.model');
-const UserSearch = require('../models/userSearch.model');
 const Favorite = require('../models/favorite.model');
 const ClickTracking = require('../models/clickTracking.model');
-const BuilderPage = require('../models/builderPage.model');
 const Widget = require('../models/widget.model');
 const {
   validateExploreBusinesses,
@@ -17,11 +15,9 @@ const {
 } = require('../utils/exploreValidation');
 const {
   calculateDistancesWithGoogleMaps,
-  calculateDistanceWithGoogleMaps,
   calculateHaversineDistance
 } = require('../utils/googleMaps');
 
-// Get nearby businesses with geo-queries (KON-31) - Most popular pages in user's city/area
 exports.getNearbyBusinesses = async (req, res, next) => {
   try {
     const { error, value } = validateNearbyBusinesses(req.query);
@@ -37,7 +33,7 @@ exports.getNearbyBusinesses = async (req, res, next) => {
     const {
       longitude: queryLongitude,
       latitude: queryLatitude,
-      maxDistance = 25000, // 25km default for nearby
+      maxDistance = 25000,
       limit = 15,
       category,
       rating,
@@ -48,7 +44,6 @@ exports.getNearbyBusinesses = async (req, res, next) => {
       completeProfile = false
     } = value;
 
-    // Get user's location from profile if not provided in query
     let longitude = queryLongitude;
     let latitude = queryLatitude;
 
@@ -57,9 +52,6 @@ exports.getNearbyBusinesses = async (req, res, next) => {
       if (user && user.longitude && user.latitude && (user.longitude !== 0 || user.latitude !== 0)) {
         longitude = user.longitude;
         latitude = user.latitude;
-        console.log(`[Nearby] Using user's saved location: ${latitude}, ${longitude}`);
-      } else {
-        console.log(`[Nearby] No location provided, returning all businesses sorted by popularity`);
       }
     }
 
@@ -90,11 +82,11 @@ exports.getNearbyBusinesses = async (req, res, next) => {
         query.industryId = { $in: industryIds };
       } else {
         // Fallback to string matching if no Industry found (backward compatibility)
-        query.$or = [
-          { industry: new RegExp(category, 'i') },
-          { subIndustry: new RegExp(category, 'i') },
+      query.$or = [
+        { industry: new RegExp(category, 'i') },
+        { subIndustry: new RegExp(category, 'i') },
           { industryTags: new RegExp(category, 'i') }
-        ];
+      ];
       }
     }
 
@@ -114,39 +106,39 @@ exports.getNearbyBusinesses = async (req, res, next) => {
       query.businessType = businessType;
     }
 
-    if (features && features.length > 0) {
-      // For array fields, use RegExp directly (MongoDB supports this)
-      if (features.length === 1) {
-        query.features = new RegExp(features[0], 'i');
-      } else {
-        // For multiple features, use $or
-        query.$or = query.$or || [];
-        features.forEach(f => {
-          query.$or.push({ features: new RegExp(f, 'i') });
-        });
+    if (features) {
+      // Normalize features to array (handle both string and array inputs)
+      const featuresArray = Array.isArray(features) ? features : [features];
+      
+      if (featuresArray.length > 0) {
+        // For array fields, use RegExp directly (MongoDB supports this)
+        if (featuresArray.length === 1) {
+          query.features = new RegExp(featuresArray[0], 'i');
+        } else {
+          // For multiple features, use $or
+          query.$or = query.$or || [];
+          featuresArray.forEach(f => {
+            query.$or.push({ features: new RegExp(f, 'i') });
+          });
+        }
       }
     }
 
     if (openedStatus === 'open') {
       const now = new Date();
       const currentDay = now.toLocaleDateString('en-US', { weekday: 'long' });
-      const currentTime = now.toTimeString().slice(0, 5);
 
       query.businessHours = {
         $elemMatch: {
-          day: currentDay,
+          day: { $regex: new RegExp(`^${currentDay}$`, 'i') },
           isClosed: false,
-          $and: [
-            { open: { $ne: "" } },
-            { close: { $ne: "" } },
-            { open: { $lte: currentTime } },
-            { close: { $gte: currentTime } }
-          ]
+          open: { $exists: true, $ne: "", $ne: null },
+          close: { $exists: true, $ne: "", $ne: null }
         }
       };
     }
 
-    const businesses = await BusinessProfile.find(query)
+    let businesses = await BusinessProfile.find(query)
       .populate('userId', 'firstName lastName')
       .select('-__v')
       .sort({
@@ -158,9 +150,15 @@ exports.getNearbyBusinesses = async (req, res, next) => {
       .limit(limit * 2)
       .lean();
 
+    if (openedStatus === 'open' && businesses.length > 0) {
+      const now = new Date();
+      const currentDay = now.toLocaleDateString('en-US', { weekday: 'long' });
+      const currentTime = now.toTimeString().slice(0, 5);
+      businesses = filterByOpenedStatus(businesses, currentDay, currentTime);
+    }
+
     let finalBusinesses = businesses;
     if (businesses.length === 0 && longitude && latitude && (longitude !== 0 || latitude !== 0)) {
-      console.log('[Nearby] No results with geo-query, trying without location filter');
       const fallbackQuery = { ...query };
       delete fallbackQuery['location.coordinates'];
       
@@ -179,7 +177,6 @@ exports.getNearbyBusinesses = async (req, res, next) => {
 
     const topBusinesses = finalBusinesses.slice(0, limit);
 
-    // Filter businesses with complete profiles if requested
     let filteredBusinesses = topBusinesses;
     if (completeProfile) {
       const completeBusinesses = [];
@@ -245,7 +242,6 @@ exports.getNearbyBusinesses = async (req, res, next) => {
   }
 };
 
-// Get top picks businesses (KON-32) - Personalized based on user preferences
 exports.getTopPicks = async (req, res, next) => {
   try {
     const { error, value } = validateTopPicks(req.query);
@@ -261,7 +257,7 @@ exports.getTopPicks = async (req, res, next) => {
     const {
       longitude,
       latitude,
-      maxDistance = 25000, // 25km for top picks
+      maxDistance = 25000,
       limit = 15,
       category,
       priceRange,
@@ -269,30 +265,19 @@ exports.getTopPicks = async (req, res, next) => {
       completeProfile = false
     } = value;
 
-    // Get user preferences for personalization
-    const [userSearches, userBusinessProfile, userFavorites] = await Promise.all([
-      // Get user's recent searches to extract categories/industries
-      UserSearch.find({ userId })
-        .sort({ createdAt: -1 })
-        .limit(20)
-        .select('category searchTerm')
-        .lean(),
-      // Get user's own business profile to get their industryIds
+    const [userBusinessProfile, userFavorites] = await Promise.all([
       BusinessProfile.findOne({ userId })
         .select('industryId subIndustryId industry subIndustry industryTags')
         .lean(),
-      // Get user's favorites to extract liked industries/pages
       Favorite.find({ userId, type: { $in: ['Page', 'BusinessProfile'] } })
         .limit(50)
         .select('widgetId type')
         .lean()
     ]);
 
-    // Extract preferred industryIds (ObjectIds) - this is the industry-standard approach
     const preferredIndustryIds = new Set();
     const preferredSubIndustryIds = new Set();
 
-    // From user's own business profile - use industryId (ObjectId)
     if (userBusinessProfile) {
       if (userBusinessProfile.industryId) {
         preferredIndustryIds.add(userBusinessProfile.industryId.toString());
@@ -302,7 +287,6 @@ exports.getTopPicks = async (req, res, next) => {
       }
     }
 
-    // From user's favorites - fetch business profiles and get their industryIds
     const favoriteBusinessIds = userFavorites
       .filter(f => f.type === 'Page' || f.type === 'BusinessProfile')
       .map(f => f.widgetId);
@@ -324,10 +308,8 @@ exports.getTopPicks = async (req, res, next) => {
       });
     }
 
-    // Build query for top picks
     const query = {};
 
-    // Geo-query if coordinates provided
     if (longitude && latitude) {
       query['location.coordinates'] = {
         $near: {
@@ -340,7 +322,6 @@ exports.getTopPicks = async (req, res, next) => {
       };
     }
 
-    // Category or industry filter
     if (category) {
       const Industry = require('../models/industry.model');
       const industries = await Industry.find({
@@ -368,28 +349,21 @@ exports.getTopPicks = async (req, res, next) => {
       }
     }
 
-    // Price range filter
-    if (priceRange) {
+      if (priceRange) {
       query.priceRange = Array.isArray(priceRange) ? { $in: priceRange } : priceRange;
     }
 
-    // Open now filter
     if (openedStatus === 'open') {
       const now = new Date();
       const currentDay = now.toLocaleDateString('en-US', { weekday: 'long' });
-      const currentTime = now.toTimeString().slice(0, 5);
 
       const openNowQuery = {
         businessHours: {
           $elemMatch: {
-            day: currentDay,
+            day: { $regex: new RegExp(`^${currentDay}$`, 'i') },
             isClosed: false,
-            $and: [
-              { open: { $ne: "" } },
-              { close: { $ne: "" } },
-              { open: { $lte: currentTime } },
-              { close: { $gte: currentTime } }
-            ]
+            open: { $exists: true, $ne: "", $ne: null },
+            close: { $exists: true, $ne: "", $ne: null }
           }
         }
       };
@@ -397,25 +371,31 @@ exports.getTopPicks = async (req, res, next) => {
       if (query.$or) {
         query.$and = [{ $or: query.$or }, openNowQuery];
         delete query.$or;
-      } else {
+          } else {
         Object.assign(query, openNowQuery);
-      }
+          }
+        }
+
+    let businesses = await BusinessProfile.find(query)
+          .populate('userId', 'firstName lastName')
+          .select('-__v')
+          .sort({
+            'metrics.ratingAverage': -1,
+            'metrics.viewCount': -1,
+            'metrics.favoriteCount': -1,
+        'updatedAt': -1
+          })
+      .limit(limit * 3)
+          .lean();
+
+    // Post-query filtering for openedStatus
+    if (openedStatus === 'open' && businesses.length > 0) {
+      const now = new Date();
+      const currentDay = now.toLocaleDateString('en-US', { weekday: 'long' });
+      const currentTime = now.toTimeString().slice(0, 5);
+      businesses = filterByOpenedStatus(businesses, currentDay, currentTime);
     }
 
-    // Execute query
-    const businesses = await BusinessProfile.find(query)
-      .populate('userId', 'firstName lastName')
-      .select('-__v')
-      .sort({
-        'metrics.ratingAverage': -1,
-        'metrics.viewCount': -1,
-        'metrics.favoriteCount': -1,
-        'updatedAt': -1
-      })
-      .limit(limit * 3)
-      .lean();
-
-    // Rank by personalization score
     const businessesWithScores = businesses.map(business => {
       let personalizationScore = 0;
       
@@ -434,7 +414,6 @@ exports.getTopPicks = async (req, res, next) => {
       };
     });
 
-    // Sort and take top results
     businessesWithScores.sort((a, b) => {
       if (b.personalizationScore !== a.personalizationScore) {
         return b.personalizationScore - a.personalizationScore;
@@ -444,7 +423,6 @@ exports.getTopPicks = async (req, res, next) => {
 
     const topBusinesses = businessesWithScores.slice(0, limit).map(item => item.business);
 
-    // Filter for complete profiles if requested
     let finalBusinesses = topBusinesses;
     if (completeProfile) {
       const completeBusinesses = [];
@@ -457,7 +435,6 @@ exports.getTopPicks = async (req, res, next) => {
       finalBusinesses = completeBusinesses.slice(0, limit);
     }
 
-    // Add distance and additional details
     const businessesWithDetails = finalBusinesses.map(business => {
       let distance = null;
       if (longitude && latitude && business.location?.coordinates?.coordinates) {
@@ -485,7 +462,7 @@ exports.getTopPicks = async (req, res, next) => {
 
       return businessData;
     });
-
+    
     res.status(200).json({
       success: true,
       data: {
@@ -500,7 +477,6 @@ exports.getTopPicks = async (req, res, next) => {
   }
 };
 
-// Get "On The Rise" businesses (KON-32)
 exports.getOnTheRise = async (req, res, next) => {
   try {
     const { error, value } = validateOnTheRise(req.query);
@@ -515,7 +491,7 @@ exports.getOnTheRise = async (req, res, next) => {
     const {
       longitude,
       latitude,
-      maxDistance = 25000, // 25km for on the rise
+      maxDistance = 25000,
       limit = 15,
       category,
       priceRange,
@@ -523,10 +499,8 @@ exports.getOnTheRise = async (req, res, next) => {
       completeProfile = false
     } = value;
 
-    // Build query for "On The Rise" - businesses with most traction (most viewed, fastest-growing engagement)
     const query = {};
 
-    // Add geo-query if coordinates provided
     if (longitude && latitude) {
       query['location.coordinates'] = {
         $near: {
@@ -546,11 +520,11 @@ exports.getOnTheRise = async (req, res, next) => {
         query.industryId = { $in: industryIds };
       } else {
         // Fallback to string matching if no Industry found (backward compatibility)
-        query.$or = [
-          { industry: new RegExp(category, 'i') },
-          { subIndustry: new RegExp(category, 'i') },
+      query.$or = [
+        { industry: new RegExp(category, 'i') },
+        { subIndustry: new RegExp(category, 'i') },
           { industryTags: new RegExp(category, 'i') }
-        ];
+      ];
       }
     }
 
@@ -562,28 +536,22 @@ exports.getOnTheRise = async (req, res, next) => {
       }
     }
 
-    // Apply "open now" filter
+    // Apply "open now" filter - query by day/isClosed, then filter by time in post-query
     if (openedStatus === 'open') {
       const now = new Date();
       const currentDay = now.toLocaleDateString('en-US', { weekday: 'long' });
-      const currentTime = now.toTimeString().slice(0, 5);
 
       const openNowQuery = {
         businessHours: {
           $elemMatch: {
-            day: currentDay,
+            day: { $regex: new RegExp(`^${currentDay}$`, 'i') },
             isClosed: false,
-            $and: [
-              { open: { $ne: "" } },
-              { close: { $ne: "" } },
-              { open: { $lte: currentTime } },
-              { close: { $gte: currentTime } }
-            ]
+            open: { $exists: true, $ne: "", $ne: null },
+            close: { $exists: true, $ne: "", $ne: null }
           }
         }
       };
 
-      // Combine with existing query using $and
       if (query.$and) {
         query.$and.push(openNowQuery);
       } else if (query.$or) {
@@ -597,47 +565,46 @@ exports.getOnTheRise = async (req, res, next) => {
       }
     }
 
-    // Minimum engagement threshold - require at least some engagement (views, favorites, or ratings)
-    // This ensures we only show businesses with actual traction
     const engagementThreshold = {
       $or: [
-        { 'metrics.viewCount': { $gte: 1 } },      // At least 1 view
-        { 'metrics.favoriteCount': { $gte: 1 } },  // At least 1 favorite
-        { 'metrics.ratingCount': { $gte: 1 } }     // At least 1 rating
+        { 'metrics.viewCount': { $gte: 1 } },
+        { 'metrics.favoriteCount': { $gte: 1 } },
+        { 'metrics.ratingCount': { $gte: 1 } }
       ]
     };
 
-    // Combine engagement threshold with existing query
-    // If there's already a $or (from category filter), use $and to combine
     if (query.$or) {
-      // Move existing $or to $and, then add engagement threshold
       query.$and = [
         { $or: query.$or },
         engagementThreshold
       ];
       delete query.$or;
     } else if (Object.keys(query).length > 0) {
-      // Other filters exist, add engagement threshold with $and
       query.$and = query.$and || [];
       query.$and.push(engagementThreshold);
     } else {
-      // No other filters, just use engagement threshold
       Object.assign(query, engagementThreshold);
     }
 
-    // Execute query - get more results to calculate engagement scores
-    const businesses = await BusinessProfile.find(query)
+    let businesses = await BusinessProfile.find(query)
       .populate('userId', 'firstName lastName')
       .select('-__v')
       .sort({
-        'metrics.viewCount': -1,  // Most viewed first
-        'metrics.favoriteCount': -1,  // Fastest-growing engagement (favorites)
-        'metrics.ratingAverage': -1  // High engagement (ratings)
+        'metrics.viewCount': -1,
+        'metrics.favoriteCount': -1,
+        'metrics.ratingAverage': -1
       })
-      .limit(limit * 2) // Get more to calculate and rank by engagement score
+      .limit(limit * 2)
       .lean();
 
-    // Calculate engagement score for each business and sort by it
+    // Post-query filtering for openedStatus
+    if (openedStatus === 'open' && businesses.length > 0) {
+      const now = new Date();
+      const currentDay = now.toLocaleDateString('en-US', { weekday: 'long' });
+      const currentTime = now.toTimeString().slice(0, 5);
+      businesses = filterByOpenedStatus(businesses, currentDay, currentTime);
+    }
+
     const businessesWithScores = businesses.map(business => {
       const engagementScore = calculateEngagementScore(business);
       return {
@@ -646,13 +613,10 @@ exports.getOnTheRise = async (req, res, next) => {
       };
     });
 
-    // Sort by engagement score (most traction, fastest-growing)
     businessesWithScores.sort((a, b) => b.engagementScore - a.engagementScore);
 
-    // Take top results
     const topBusinesses = businessesWithScores.slice(0, limit).map(item => item.business);
 
-    // Filter businesses with complete profiles if requested
     let finalBusinesses = topBusinesses;
     if (completeProfile) {
       const completeBusinesses = [];
@@ -665,7 +629,6 @@ exports.getOnTheRise = async (req, res, next) => {
       finalBusinesses = completeBusinesses;
     }
 
-    // Add distance and additional info
     const businessesWithDetails = finalBusinesses.map(business => {
       let distance = null;
       if (longitude && latitude && business.location?.coordinates?.coordinates) {
@@ -704,7 +667,6 @@ exports.getOnTheRise = async (req, res, next) => {
   }
 };
 
-// Get newly added businesses (sorted by creation date)
 exports.getNewlyAdded = async (req, res, next) => {
   try {
     const { error, value } = validateNewlyAdded(req.query);
@@ -726,21 +688,18 @@ exports.getNewlyAdded = async (req, res, next) => {
       completeProfile = false
     } = value;
 
-    // Build query for newly added businesses
     const query = {};
 
-    // Apply filters - use industryId (ObjectId) matching
     if (category) {
       const industryIds = await getIndustryIdsFromCategory(category);
       if (industryIds.length > 0) {
         query.industryId = { $in: industryIds };
       } else {
-        // Fallback to string matching if no Industry found (backward compatibility)
-        query.$or = [
-          { industry: new RegExp(category, 'i') },
-          { subIndustry: new RegExp(category, 'i') },
+      query.$or = [
+        { industry: new RegExp(category, 'i') },
+        { subIndustry: new RegExp(category, 'i') },
           { industryTags: new RegExp(category, 'i') }
-        ];
+      ];
       }
     }
 
@@ -765,12 +724,11 @@ exports.getNewlyAdded = async (req, res, next) => {
       };
     }
 
-    // Get businesses sorted by creation date (newest first)
     const businesses = await BusinessProfile.find(query)
       .populate('userId', 'firstName lastName')
       .select('-__v')
-      .sort({ createdAt: -1 }) // Sort by creation date, newest first
-      .limit(limit * 2) // Get more to handle filters
+      .sort({ createdAt: -1 })
+      .limit(limit * 2)
       .lean();
 
     if (businesses.length === 0) {
@@ -800,7 +758,6 @@ exports.getNewlyAdded = async (req, res, next) => {
       finalBusinesses = completeBusinesses;
     }
 
-    // Calculate distances if coordinates provided
     let distances = [];
     if (longitude && latitude) {
       const businessLocations = finalBusinesses
@@ -854,7 +811,6 @@ exports.getNewlyAdded = async (req, res, next) => {
   }
 };
 
-// Get recently viewed businesses (Recents)
 exports.getRecents = async (req, res, next) => {
   try {
     const { error, value } = validateRecents(req.query);
@@ -878,8 +834,6 @@ exports.getRecents = async (req, res, next) => {
       completeProfile = false
     } = value;
 
-    // Get user's recent views from ClickTracking (targetType: 'view')
-    // targetId in ClickTracking is BuilderPage ID, not BusinessProfile ID
     const recentViews = await ClickTracking.aggregate([
       {
         $match: {
@@ -892,7 +846,7 @@ exports.getRecents = async (req, res, next) => {
       },
       {
         $group: {
-          _id: '$targetId', // This is BuilderPage ID
+          _id: '$targetId',
           lastViewedAt: { $first: '$timestamp' },
           viewCount: { $sum: 1 }
         }
@@ -901,7 +855,7 @@ exports.getRecents = async (req, res, next) => {
         $sort: { lastViewedAt: -1 }
       },
       {
-        $limit: limit * 2 // Get more to handle filters
+        $limit: limit * 2
       }
     ]);
 
@@ -917,7 +871,6 @@ exports.getRecents = async (req, res, next) => {
       });
     }
 
-    // Extract BuilderPage IDs
     const builderPageIds = recentViews.map(view => view._id);
     const viewTimeMap = new Map();
     recentViews.forEach(view => {
@@ -927,8 +880,6 @@ exports.getRecents = async (req, res, next) => {
       });
     });
 
-    // Find BusinessProfiles that have these BuilderPages
-    // BusinessProfile.builderPageId references BuilderPage._id
     const query = {
       builderPageId: { $in: builderPageIds }
     };
@@ -940,11 +891,11 @@ exports.getRecents = async (req, res, next) => {
         query.industryId = { $in: industryIds };
       } else {
         // Fallback to string matching if no Industry found (backward compatibility)
-        query.$or = [
-          { industry: new RegExp(category, 'i') },
-          { subIndustry: new RegExp(category, 'i') },
+      query.$or = [
+        { industry: new RegExp(category, 'i') },
+        { subIndustry: new RegExp(category, 'i') },
           { industryTags: new RegExp(category, 'i') }
-        ];
+      ];
       }
     }
 
@@ -956,22 +907,17 @@ exports.getRecents = async (req, res, next) => {
       }
     }
 
-    // Apply "open now" filter
+    // Apply "open now" filter - query by day/isClosed, then filter by time in post-query
     if (openedStatus === 'open') {
       const now = new Date();
       const currentDay = now.toLocaleDateString('en-US', { weekday: 'long' });
-      const currentTime = now.toTimeString().slice(0, 5);
 
       query.businessHours = {
         $elemMatch: {
-          day: currentDay,
+          day: { $regex: new RegExp(`^${currentDay}$`, 'i') },
           isClosed: false,
-          $and: [
-            { open: { $ne: "" } },
-            { close: { $ne: "" } },
-            { open: { $lte: currentTime } },
-            { close: { $gte: currentTime } }
-          ]
+          open: { $exists: true, $ne: "", $ne: null },
+          close: { $exists: true, $ne: "", $ne: null }
         }
       };
     }
@@ -989,15 +935,20 @@ exports.getRecents = async (req, res, next) => {
       };
     }
 
-    // Get businesses
-    const businesses = await BusinessProfile.find(query)
+    let businesses = await BusinessProfile.find(query)
       .populate('userId', 'firstName lastName')
       .select('-__v')
       .lean();
 
-    // Sort by most recent view time (maintain order from aggregation)
+    // Post-query filtering for openedStatus
+    if (openedStatus === 'open' && businesses.length > 0) {
+      const now = new Date();
+      const currentDay = now.toLocaleDateString('en-US', { weekday: 'long' });
+      const currentTime = now.toTimeString().slice(0, 5);
+      businesses = filterByOpenedStatus(businesses, currentDay, currentTime);
+    }
+
     const businessesWithViewInfo = businesses.map(business => {
-      // Find the view info for this business's builderPageId
       const viewInfo = viewTimeMap.get(business.builderPageId?.toString());
       return {
         business,
@@ -1006,7 +957,6 @@ exports.getRecents = async (req, res, next) => {
       };
     });
 
-    // Sort by last viewed time (most recent first)
     businessesWithViewInfo.sort((a, b) => {
       return new Date(b.lastViewedAt) - new Date(a.lastViewedAt);
     });
@@ -1083,7 +1033,6 @@ exports.getRecents = async (req, res, next) => {
   }
 };
 
-// Comprehensive explore with all filters (KON-33)
 exports.exploreBusinesses = async (req, res, next) => {
   try {
     const { error, value } = validateExploreBusinesses(req.query);
@@ -1098,7 +1047,7 @@ exports.exploreBusinesses = async (req, res, next) => {
     const {
       longitude,
       latitude,
-      maxDistance = 50000, // 50km for general explore
+      maxDistance = 50000,
       limit = 20,
       page = 1,
       sortBy = 'relevance',
@@ -1114,14 +1063,9 @@ exports.exploreBusinesses = async (req, res, next) => {
       nearby = false,
       completeProfile = false
     } = value;
-
-
-    // Build query
     const query = {};
 
-    // Handle special search parameters
     if (nearby && longitude && latitude) {
-      // Nearby search - prioritize distance with smaller radius
       const nearbyRadius = Math.min(maxDistance, 10000);
       query['location.coordinates'] = {
         $near: {
@@ -1133,7 +1077,6 @@ exports.exploreBusinesses = async (req, res, next) => {
         }
       };
     } else if (longitude && latitude) {
-      // Regular geo-query if coordinates provided
       query['location.coordinates'] = {
         $near: {
           $geometry: {
@@ -1143,44 +1086,29 @@ exports.exploreBusinesses = async (req, res, next) => {
           $maxDistance: maxDistance
         }
       };
-    } else if (nearby) {
     }
 
-    // Text search
     if (search) {
       query.$text = { $search: search };
     }
 
-    // Handle toprated search
     if (toprated) {
-      query['metrics.ratingAverage'] = { $gte: 4.0 }; // Minimum 4-star rating
-      query['metrics.ratingCount'] = { $gte: 10 }; // At least 10 reviews
+      query['metrics.ratingAverage'] = { $gte: 4.0 };
+      query['metrics.ratingCount'] = { $gte: 10 };
     }
 
-    // Handle opennow search
     if (opennow) {
       const now = new Date();
       const currentDay = now.toLocaleDateString('en-US', { weekday: 'long' });
-      const currentTime = now.toTimeString().slice(0, 5);
 
-
-
-      const businessHoursQuery = {
+      query.businessHours = {
         $elemMatch: {
-          day: currentDay,
+          day: { $regex: new RegExp(`^${currentDay}$`, 'i') },
           isClosed: false,
-          // Handle empty strings - if open/close are empty, business is closed
-          $and: [
-            { open: { $ne: "" } },
-            { close: { $ne: "" } },
-            { open: { $lte: currentTime } },
-            { close: { $gte: currentTime } }
-          ]
+          open: { $exists: true, $ne: "", $ne: null },
+          close: { $exists: true, $ne: "", $ne: null }
         }
       };
-
-
-      query.businessHours = businessHoursQuery;
     }
 
     // Apply filters - use industryId (ObjectId) matching
@@ -1190,16 +1118,15 @@ exports.exploreBusinesses = async (req, res, next) => {
         query.industryId = { $in: industryIds };
       } else {
         // Fallback to string matching if no Industry found (backward compatibility)
-        query.$or = [
-          { industry: new RegExp(category, 'i') },
-          { subIndustry: new RegExp(category, 'i') },
+      query.$or = [
+        { industry: new RegExp(category, 'i') },
+        { subIndustry: new RegExp(category, 'i') },
           { industryTags: new RegExp(category, 'i') }
-        ];
+      ];
       }
     }
 
     if (rating) {
-      console.log(`⭐ RATING FILTER: ${rating}+ stars`);
       query['metrics.ratingAverage'] = { $gte: rating };
     }
 
@@ -1215,41 +1142,34 @@ exports.exploreBusinesses = async (req, res, next) => {
       query.businessType = businessType;
     }
 
-    if (features && features.length > 0) {
-      // For array fields, use RegExp directly (MongoDB supports this)
-      if (features.length === 1) {
-        query.features = new RegExp(features[0], 'i');
-      } else {
-        // For multiple features, use $or
-        query.$or = query.$or || [];
-        features.forEach(f => {
-          query.$or.push({ features: new RegExp(f, 'i') });
-        });
+    if (features) {
+      const featuresArray = Array.isArray(features) ? features : [features];
+      if (featuresArray.length > 0) {
+        if (featuresArray.length === 1) {
+          query.features = new RegExp(featuresArray[0], 'i');
+        } else {
+          query.$or = query.$or || [];
+          featuresArray.forEach(f => {
+            query.$or.push({ features: new RegExp(f, 'i') });
+          });
+        }
       }
     }
 
-    // Filter by opened status
     if (openedStatus === 'open') {
       const now = new Date();
       const currentDay = now.toLocaleDateString('en-US', { weekday: 'long' });
-      const currentTime = now.toTimeString().slice(0, 5);
 
       query.businessHours = {
         $elemMatch: {
-          day: currentDay,
+          day: { $regex: new RegExp(`^${currentDay}$`, 'i') },
           isClosed: false,
-          // Handle empty strings - if open/close are empty, business is closed
-          $and: [
-            { open: { $ne: "" } },
-            { close: { $ne: "" } },
-            { open: { $lte: currentTime } },
-            { close: { $gte: currentTime } }
-          ]
+          open: { $exists: true, $ne: "", $ne: null },
+          close: { $exists: true, $ne: "", $ne: null }
         }
       };
     }
 
-    // Build sort object
     const sort = {};
 
     switch (sortBy) {
@@ -1258,7 +1178,6 @@ exports.exploreBusinesses = async (req, res, next) => {
         sort['metrics.ratingCount'] = -1;
         break;
       case 'distance':
-        // Distance sorting is handled by $near in geo-query
         break;
       case 'popularity':
         sort['metrics.viewCount'] = -1;
@@ -1289,21 +1208,23 @@ exports.exploreBusinesses = async (req, res, next) => {
         break;
     }
 
-    // Calculate pagination
-    // Fetch more businesses to account for filtering (fetch 3x limit to ensure we have enough after filtering)
     const fetchLimit = limit * 3;
     const skip = (page - 1) * limit;
 
-    const businesses = await BusinessProfile.find(query)
-      .populate('userId', 'firstName lastName')
-      .select('-__v')
-      .sort(sort)
+    let businesses = await BusinessProfile.find(query)
+        .populate('userId', 'firstName lastName')
+        .select('-__v')
+        .sort(sort)
       .limit(fetchLimit)
       .lean();
 
-    console.log(`✅ QUERY RESULTS: Found ${businesses.length} businesses`);
+    if ((openedStatus === 'open' || opennow) && businesses.length > 0) {
+      const now = new Date();
+      const currentDay = now.toLocaleDateString('en-US', { weekday: 'long' });
+      const currentTime = now.toTimeString().slice(0, 5);
+      businesses = filterByOpenedStatus(businesses, currentDay, currentTime);
+    }
 
-    // Filter businesses with complete profiles if requested
     let finalBusinesses = businesses;
     if (completeProfile) {
       const completeBusinesses = [];
@@ -1316,13 +1237,10 @@ exports.exploreBusinesses = async (req, res, next) => {
       finalBusinesses = completeBusinesses;
     }
 
-    // Apply pagination after filtering
     const paginatedBusinesses = finalBusinesses.slice(skip, skip + limit);
     const filteredTotalCount = finalBusinesses.length;
 
-    // Add distance and additional info
-    console.log('🔧 Enhancing business data with distance and status...');
-    const businessesWithDetails = paginatedBusinesses.map((business, index) => {
+    const businessesWithDetails = paginatedBusinesses.map((business) => {
       let distance = null;
       if (longitude && latitude && business.location?.coordinates?.coordinates) {
         distance = calculateDistance(
@@ -1336,7 +1254,6 @@ exports.exploreBusinesses = async (req, res, next) => {
 
       const isCurrentlyOpen = checkIfCurrentlyOpen(business.businessHours);
 
-
       return {
         ...business,
         distance,
@@ -1345,11 +1262,9 @@ exports.exploreBusinesses = async (req, res, next) => {
       };
     });
 
-    // Calculate pagination info (use filtered count)
     const totalPages = Math.ceil(filteredTotalCount / limit);
     const hasNextPage = page < totalPages;
     const hasPrevPage = page > 1;
-
 
     res.status(200).json({
       success: true,
@@ -1365,13 +1280,13 @@ exports.exploreBusinesses = async (req, res, next) => {
         },
         searchCenter: longitude && latitude ? { latitude, longitude } : null,
         appliedFilters: {
-          category,
-          rating,
-          priceRange,
-          openedStatus,
-          businessType,
-          features,
-          search,
+          category: category || null,
+          rating: rating || null,
+          priceRange: priceRange || null,
+          openedStatus: openedStatus || 'any',
+          businessType: businessType || null,
+          features: features || null,
+          search: search || null,
           toprated,
           opennow,
           nearby
@@ -1383,22 +1298,18 @@ exports.exploreBusinesses = async (req, res, next) => {
     next(error);
   }
 };
-
-
-// Get recent searches for user
 exports.getRecentSearches = async (req, res, next) => {
   try {
     const userId = req.user.id;
     const { limit = 10 } = req.query;
 
-    // For now, we'll return a mock response
     const recentSearches = [
       {
         id: '1',
         searchTerm: 'coffee shops',
         category: 'Food & Beverage',
         location: 'Downtown',
-        timestamp: new Date(Date.now() - 2 * 60 * 60 * 1000), // 2 hours ago
+        timestamp: new Date(Date.now() - 2 * 60 * 60 * 1000),
         resultCount: 15
       },
       {
@@ -1406,7 +1317,7 @@ exports.getRecentSearches = async (req, res, next) => {
         searchTerm: 'restaurants',
         category: 'Food & Beverage',
         priceRange: '$$',
-        timestamp: new Date(Date.now() - 24 * 60 * 60 * 1000), // 1 day ago
+        timestamp: new Date(Date.now() - 24 * 60 * 60 * 1000),
         resultCount: 32
       }
     ];
@@ -1423,7 +1334,6 @@ exports.getRecentSearches = async (req, res, next) => {
   }
 };
 
-// Save search to recent searches
 exports.saveRecentSearch = async (req, res, next) => {
   try {
     const userId = req.user.id;
@@ -1437,8 +1347,6 @@ exports.saveRecentSearch = async (req, res, next) => {
       });
     }
 
-    // This would typically save to a user searches collection
-    // For now, we'll return a success response
     res.status(201).json({
       success: true,
       message: 'Search saved to recent searches',
@@ -1454,8 +1362,6 @@ exports.saveRecentSearch = async (req, res, next) => {
   }
 };
 
-// Helper function to convert category string to industryIds (ObjectIds)
-// Industry-standard: Use ObjectId matching instead of string regex
 async function getIndustryIdsFromCategory(category) {
   try {
     const Industry = require('../models/industry.model');
@@ -1471,9 +1377,8 @@ async function getIndustryIdsFromCategory(category) {
   }
 }
 
-// Helper function to calculate distance between two points
 function calculateDistance(lat1, lon1, lat2, lon2) {
-  const R = 6371; // Radius of the Earth in kilometers
+  const R = 6371;
   const dLat = (lat2 - lat1) * Math.PI / 180;
   const dLon = (lon2 - lon1) * Math.PI / 180;
   const a =
@@ -1481,11 +1386,64 @@ function calculateDistance(lat1, lon1, lat2, lon2) {
     Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
     Math.sin(dLon / 2) * Math.sin(dLon / 2);
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  const distance = R * c; // Distance in kilometers
-  return distance;
+  return R * c;
 }
 
-// Helper function to check if business is currently open
+function normalizeTime(timeStr) {
+  if (!timeStr || typeof timeStr !== 'string') return null;
+  const parts = timeStr.split(':');
+  if (parts.length !== 2) return null;
+  const hours = parts[0].padStart(2, '0');
+  const minutes = parts[1].padStart(2, '0');
+  return `${hours}:${minutes}`;
+}
+
+function timeToMinutes(timeStr) {
+  if (!timeStr || typeof timeStr !== 'string') return null;
+  const normalized = normalizeTime(timeStr);
+  if (!normalized) return null;
+  const [hours, minutes] = normalized.split(':').map(Number);
+  return hours * 60 + minutes;
+}
+
+function filterByOpenedStatus(businesses, currentDay, currentTime) {
+  if (!businesses || businesses.length === 0) return businesses;
+  
+  const currentTimeMinutes = timeToMinutes(currentTime);
+  if (currentTimeMinutes === null) return [];
+
+  return businesses.filter(business => {
+    if (!business.businessHours || business.businessHours.length === 0) {
+      return false;
+    }
+
+    const todayHours = business.businessHours.find(hours => 
+      hours.day && hours.day.toLowerCase() === currentDay.toLowerCase()
+    );
+
+    if (!todayHours || todayHours.isClosed) {
+      return false;
+    }
+
+    if (!todayHours.open || !todayHours.close) {
+      return false;
+    }
+
+    const openMinutes = timeToMinutes(todayHours.open);
+    const closeMinutes = timeToMinutes(todayHours.close);
+
+    if (openMinutes === null || closeMinutes === null) {
+      return false;
+    }
+
+    if (closeMinutes < openMinutes) {
+      return currentTimeMinutes >= openMinutes || currentTimeMinutes <= closeMinutes;
+    }
+
+    return currentTimeMinutes >= openMinutes && currentTimeMinutes <= closeMinutes;
+  });
+}
+
 function checkIfCurrentlyOpen(businessHours) {
   if (!businessHours || businessHours.length === 0) {
     return false;
@@ -1493,56 +1451,69 @@ function checkIfCurrentlyOpen(businessHours) {
 
   const now = new Date();
   const currentDay = now.toLocaleDateString('en-US', { weekday: 'long' });
-  const currentTime = now.toTimeString().slice(0, 5); // HH:MM format
+  const currentTime = now.toTimeString().slice(0, 5);
+  const currentTimeMinutes = timeToMinutes(currentTime);
 
-  const todayHours = businessHours.find(hours => hours.day === currentDay);
+  if (currentTimeMinutes === null) {
+    return false;
+  }
+
+  const todayHours = businessHours.find(hours => 
+    hours.day && hours.day.toLowerCase() === currentDay.toLowerCase()
+  );
 
   if (!todayHours || todayHours.isClosed) {
     return false;
   }
 
-  return currentTime >= todayHours.open && currentTime <= todayHours.close;
+  if (!todayHours.open || !todayHours.close) {
+    return false;
+  }
+
+  const openMinutes = timeToMinutes(todayHours.open);
+  const closeMinutes = timeToMinutes(todayHours.close);
+
+  if (openMinutes === null || closeMinutes === null) {
+    return false;
+  }
+
+  if (closeMinutes < openMinutes) {
+    return currentTimeMinutes >= openMinutes || currentTimeMinutes <= closeMinutes;
+  }
+
+  return currentTimeMinutes >= openMinutes && currentTimeMinutes <= closeMinutes;
 }
 
-// Helper function to check if business has complete profile (with detailed reason)
-// Returns { isComplete: boolean, reason?: string }
 async function hasCompleteProfileWithDetails(business) {
   try {
-    // Check cover photo (coverImage)
     if (!business.coverImage || typeof business.coverImage !== 'string' || business.coverImage.trim() === '') {
       return { isComplete: false, reason: 'noCover' };
     }
-    
-    // Check logo
+
     if (!business.logo || typeof business.logo !== 'string' || business.logo.trim() === '') {
       return { isComplete: false, reason: 'noLogo' };
     }
-    
-    // Check business name
+
     if (!business.businessName || typeof business.businessName !== 'string' || business.businessName.trim() === '') {
       return { isComplete: false, reason: 'noName' };
     }
-    
-    // Check industry - can be either industry (string) or industryId (ObjectId)
-    // Data integrity: industry string is populated from Industry.title, but industryId is the source of truth
+
     const hasIndustry = (business.industry && typeof business.industry === 'string' && business.industry.trim() !== '') ||
                         (business.industryId && business.industryId.toString && business.industryId.toString().length > 0);
-    
+
     if (!hasIndustry) {
       return { isComplete: false, reason: 'noIndustry' };
     }
-    
-    // Check bio (description) - either short or full description
+
     const hasDescription = business.description && (
       (business.description.short && typeof business.description.short === 'string' && business.description.short.trim() !== '') ||
       (business.description.full && typeof business.description.full === 'string' && business.description.full.trim() !== '')
     );
-    
+
     if (!hasDescription) {
       return { isComplete: false, reason: 'noDescription' };
     }
-    
-    // Check location - need either address/city OR valid coordinates (not both required)
+
     const hasLocation = business.location && (
       (business.location.address && typeof business.location.address === 'string' && business.location.address.trim() !== '') ||
       (business.location.city && typeof business.location.city === 'string' && business.location.city.trim() !== '') ||
@@ -1553,17 +1524,14 @@ async function hasCompleteProfileWithDetails(business) {
        business.location.coordinates.coordinates[0] !== 0 &&
        business.location.coordinates.coordinates[1] !== 0)
     );
-    
+
     if (!hasLocation) {
       return { isComplete: false, reason: 'noLocation' };
     }
-    
-    // Check if business has at least one widget
-    // Widgets are linked via pageId (primary) or businessId (fallback)
+
     try {
       let activeVisibleWidgets = 0;
-      
-      // Primary check: widgets linked via pageId
+
       if (business.builderPageId && mongoose.Types.ObjectId.isValid(business.builderPageId)) {
         activeVisibleWidgets = await Widget.countDocuments({
           pageId: business.builderPageId,
@@ -1571,8 +1539,7 @@ async function hasCompleteProfileWithDetails(business) {
           isVisible: true
         });
       }
-      
-      // Fallback: if no widgets via pageId, check via businessId
+
       if (activeVisibleWidgets === 0 && business._id && mongoose.Types.ObjectId.isValid(business._id)) {
         activeVisibleWidgets = await Widget.countDocuments({ 
           businessId: business._id,
@@ -1587,7 +1554,7 @@ async function hasCompleteProfileWithDetails(business) {
     } catch (error) {
       return { isComplete: false, reason: 'noWidgets' };
     }
-    
+
     return { isComplete: true };
   } catch (error) {
     console.error(`[hasCompleteProfile] Error checking profile for business ${business._id}:`, error);
@@ -1595,13 +1562,6 @@ async function hasCompleteProfileWithDetails(business) {
   }
 }
 
-// Helper function to check if business has complete profile (backward compatibility)
-async function hasCompleteProfile(business) {
-  const result = await hasCompleteProfileWithDetails(business);
-  return result.isComplete;
-}
-
-// Helper function to calculate top pick score
 function calculateTopPickScore(business) {
   const ratingWeight = 0.4;
   const viewCountWeight = 0.3;
@@ -1621,19 +1581,16 @@ function calculateTopPickScore(business) {
   );
 }
 
-// Helper function to calculate engagement score for "On The Rise"
-// Focuses on most viewed and fastest-growing engagement metrics
 function calculateEngagementScore(business) {
-  const viewCountWeight = 0.4;      // Most viewed (40%)
-  const favoriteWeight = 0.3;       // Fastest-growing engagement - favorites (30%)
-  const ratingWeight = 0.2;         // Engagement quality - ratings (20%)
-  const ratingCountWeight = 0.1;    // Engagement volume - number of ratings (10%)
+  const viewCountWeight = 0.4;
+  const favoriteWeight = 0.3;
+  const ratingWeight = 0.2;
+  const ratingCountWeight = 0.1;
 
-  // Normalize scores (0-1 range)
-  const viewScore = Math.min((business.metrics?.viewCount || 0) / 1000, 1); // Cap at 1000 views = 1.0
-  const favoriteScore = Math.min((business.metrics?.favoriteCount || 0) / 50, 1); // Cap at 50 favorites = 1.0
-  const ratingScore = (business.metrics?.ratingAverage || 0) / 5; // 0-5 rating scale
-  const ratingCountScore = Math.min((business.metrics?.ratingCount || 0) / 100, 1); // Cap at 100 ratings = 1.0
+  const viewScore = Math.min((business.metrics?.viewCount || 0) / 1000, 1);
+  const favoriteScore = Math.min((business.metrics?.favoriteCount || 0) / 50, 1);
+  const ratingScore = (business.metrics?.ratingAverage || 0) / 5;
+  const ratingCountScore = Math.min((business.metrics?.ratingCount || 0) / 100, 1);
 
   return (
     viewScore * viewCountWeight +
@@ -1641,16 +1598,4 @@ function calculateEngagementScore(business) {
     ratingScore * ratingWeight +
     ratingCountScore * ratingCountWeight
   );
-}
-
-// Helper function to calculate rise score (legacy - kept for backward compatibility)
-function calculateRiseScore(business, recentDate) {
-  const daysSinceCreated = Math.floor((Date.now() - new Date(business.createdAt)) / (1000 * 60 * 60 * 24));
-  const daysSinceUpdated = Math.floor((Date.now() - new Date(business.updatedAt)) / (1000 * 60 * 60 * 24));
-
-  const recencyScore = Math.max(0, 1 - (daysSinceUpdated / 30)); // Higher score for more recent updates
-  const viewGrowthScore = Math.min((business.metrics.viewCount || 0) / 100, 1);
-  const newBusinessBonus = daysSinceCreated <= 30 ? 0.3 : 0;
-
-  return recencyScore * 0.5 + viewGrowthScore * 0.5 + newBusinessBonus;
 } 
