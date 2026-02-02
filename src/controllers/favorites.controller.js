@@ -96,20 +96,19 @@ exports.addFavorite = async (req, res, next) => {
       await existingFavorite.deleteOne();
       
       if (type === 'Page' && content && content._isBusinessProfile) {
+        await BusinessProfile.findByIdAndUpdate(widgetId, {
+          $inc: { 'metrics.favoriteCount': -1 }
+        }, {
+          runValidators: false
+        });
+        
         const businessProfile = await BusinessProfile.findById(widgetId);
-        if (businessProfile) {
-          if (businessProfile.metrics.favoriteCount > 0) {
-            businessProfile.metrics.favoriteCount -= 1;
-            await businessProfile.save();
-          }
-          
-          if (businessProfile.builderPageId) {
-            const builderPage = await BuilderPage.findById(businessProfile.builderPageId);
-            if (builderPage && builderPage.analytics.favoriteCount > 0) {
-              builderPage.analytics.favoriteCount -= 1;
-              await builderPage.save();
-            }
-          }
+        if (businessProfile?.builderPageId) {
+          await BuilderPage.findByIdAndUpdate(businessProfile.builderPageId, {
+            $inc: { 'analytics.favoriteCount': -1 }
+          }, {
+            runValidators: false
+          });
         }
       }
       
@@ -165,18 +164,19 @@ exports.addFavorite = async (req, res, next) => {
     await favorite.save();
 
     if (type === 'Page' && content && content._isBusinessProfile) {
+      await BusinessProfile.findByIdAndUpdate(widgetId, {
+        $inc: { 'metrics.favoriteCount': 1 }
+      }, {
+        runValidators: false
+      });
+      
       const businessProfile = await BusinessProfile.findById(widgetId);
-      if (businessProfile) {
-        businessProfile.metrics.favoriteCount += 1;
-        await businessProfile.save();
-        
-        if (businessProfile.builderPageId) {
-          const builderPage = await BuilderPage.findById(businessProfile.builderPageId);
-          if (builderPage) {
-            builderPage.analytics.favoriteCount += 1;
-            await builderPage.save();
-          }
-        }
+      if (businessProfile?.builderPageId) {
+        await BuilderPage.findByIdAndUpdate(businessProfile.builderPageId, {
+          $inc: { 'analytics.favoriteCount': 1 }
+        }, {
+          runValidators: false
+        });
       }
     }
 
@@ -633,22 +633,20 @@ exports.removeFavorite = async (req, res, next) => {
       });
     }
 
-    // Decrement favoriteCount for BusinessProfile and BuilderPage if it's a Page type
     if (favorite.type === 'Page' && favorite.widgetId) {
+      await BusinessProfile.findByIdAndUpdate(favorite.widgetId, {
+        $inc: { 'metrics.favoriteCount': -1 }
+      }, {
+        runValidators: false
+      });
+      
       const businessProfile = await BusinessProfile.findById(favorite.widgetId);
-      if (businessProfile) {
-        if (businessProfile.metrics.favoriteCount > 0) {
-          businessProfile.metrics.favoriteCount -= 1;
-          await businessProfile.save();
-        }
-        
-        if (businessProfile.builderPageId) {
-          const builderPage = await BuilderPage.findById(businessProfile.builderPageId);
-          if (builderPage && builderPage.analytics.favoriteCount > 0) {
-            builderPage.analytics.favoriteCount -= 1;
-            await builderPage.save();
-          }
-        }
+      if (businessProfile?.builderPageId) {
+        await BuilderPage.findByIdAndUpdate(businessProfile.builderPageId, {
+          $inc: { 'analytics.favoriteCount': -1 }
+        }, {
+          runValidators: false
+        });
       }
     }
 

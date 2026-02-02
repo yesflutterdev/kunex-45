@@ -1,5 +1,6 @@
 const mongoose = require('mongoose');
 const BusinessProfile = require('../models/businessProfile.model');
+const BuilderPage = require('../models/builderPage.model');
 const User = require('../models/user.model');
 const Favorite = require('../models/favorite.model');
 const ClickTracking = require('../models/clickTracking.model');
@@ -124,22 +125,9 @@ exports.getNearbyBusinesses = async (req, res, next) => {
       }
     }
 
-    if (openedStatus === 'open') {
-      const now = new Date();
-      const currentDay = now.toLocaleDateString('en-US', { weekday: 'long' });
-
-      query.businessHours = {
-        $elemMatch: {
-          day: { $regex: new RegExp(`^${currentDay}$`, 'i') },
-          isClosed: false,
-          open: { $exists: true, $ne: "", $ne: null },
-          close: { $exists: true, $ne: "", $ne: null }
-        }
-      };
-    }
-
     let businesses = await BusinessProfile.find(query)
       .populate('userId', 'firstName lastName')
+      .populate('builderPageId', 'serviceHours')
       .select('-__v')
       .sort({
         'metrics.viewCount': -1,
@@ -164,6 +152,7 @@ exports.getNearbyBusinesses = async (req, res, next) => {
       
       finalBusinesses = await BusinessProfile.find(fallbackQuery)
         .populate('userId', 'firstName lastName')
+        .populate('builderPageId', 'serviceHours')
         .select('-__v')
         .sort({
           'metrics.viewCount': -1,
@@ -223,7 +212,7 @@ exports.getNearbyBusinesses = async (req, res, next) => {
       return {
         ...business,
         distance,
-        isCurrentlyOpen: checkIfCurrentlyOpen(business.businessHours),
+        isCurrentlyOpen: checkIfCurrentlyOpen(business.builderPageId),
         distanceUnit: distance !== null ? 'km' : null
       };
     });
@@ -353,31 +342,9 @@ exports.getTopPicks = async (req, res, next) => {
       query.priceRange = Array.isArray(priceRange) ? { $in: priceRange } : priceRange;
     }
 
-    if (openedStatus === 'open') {
-      const now = new Date();
-      const currentDay = now.toLocaleDateString('en-US', { weekday: 'long' });
-
-      const openNowQuery = {
-        businessHours: {
-          $elemMatch: {
-            day: { $regex: new RegExp(`^${currentDay}$`, 'i') },
-            isClosed: false,
-            open: { $exists: true, $ne: "", $ne: null },
-            close: { $exists: true, $ne: "", $ne: null }
-          }
-        }
-      };
-
-      if (query.$or) {
-        query.$and = [{ $or: query.$or }, openNowQuery];
-        delete query.$or;
-          } else {
-        Object.assign(query, openNowQuery);
-          }
-        }
-
     let businesses = await BusinessProfile.find(query)
           .populate('userId', 'firstName lastName')
+          .populate('builderPageId', 'serviceHours')
           .select('-__v')
           .sort({
             'metrics.ratingAverage': -1,
@@ -447,7 +414,7 @@ exports.getTopPicks = async (req, res, next) => {
         distance = Math.round(distance * 100) / 100;
       }
 
-      const isCurrentlyOpen = checkIfCurrentlyOpen(business.businessHours);
+      const isCurrentlyOpen = checkIfCurrentlyOpen(business.builderPageId);
 
       const businessData = {
         ...business,
@@ -536,34 +503,6 @@ exports.getOnTheRise = async (req, res, next) => {
       }
     }
 
-    // Apply "open now" filter - query by day/isClosed, then filter by time in post-query
-    if (openedStatus === 'open') {
-      const now = new Date();
-      const currentDay = now.toLocaleDateString('en-US', { weekday: 'long' });
-
-      const openNowQuery = {
-        businessHours: {
-          $elemMatch: {
-            day: { $regex: new RegExp(`^${currentDay}$`, 'i') },
-            isClosed: false,
-            open: { $exists: true, $ne: "", $ne: null },
-            close: { $exists: true, $ne: "", $ne: null }
-          }
-        }
-      };
-
-      if (query.$and) {
-        query.$and.push(openNowQuery);
-      } else if (query.$or) {
-        query.$and = [
-          { $or: query.$or },
-          openNowQuery
-        ];
-        delete query.$or;
-      } else {
-        Object.assign(query, openNowQuery);
-      }
-    }
 
     const engagementThreshold = {
       $or: [
@@ -588,6 +527,7 @@ exports.getOnTheRise = async (req, res, next) => {
 
     let businesses = await BusinessProfile.find(query)
       .populate('userId', 'firstName lastName')
+      .populate('builderPageId', 'serviceHours')
       .select('-__v')
       .sort({
         'metrics.viewCount': -1,
@@ -641,7 +581,7 @@ exports.getOnTheRise = async (req, res, next) => {
         distance = Math.round(distance * 100) / 100;
       }
 
-      const isCurrentlyOpen = checkIfCurrentlyOpen(business.businessHours);
+      const isCurrentlyOpen = checkIfCurrentlyOpen(business.builderPageId);
       const engagementScore = calculateEngagementScore(business);
 
       return {
@@ -685,6 +625,7 @@ exports.getNewlyAdded = async (req, res, next) => {
       limit = 15,
       category,
       priceRange,
+      openedStatus = 'any',
       completeProfile = false
     } = value;
 
@@ -726,6 +667,7 @@ exports.getNewlyAdded = async (req, res, next) => {
 
     const businesses = await BusinessProfile.find(query)
       .populate('userId', 'firstName lastName')
+      .populate('builderPageId', 'serviceHours')
       .select('-__v')
       .sort({ createdAt: -1 })
       .limit(limit * 2)
@@ -743,7 +685,15 @@ exports.getNewlyAdded = async (req, res, next) => {
       });
     }
 
-    const topBusinesses = businesses.slice(0, limit);
+    let topBusinesses = businesses.slice(0, limit);
+
+    // Post-query filtering for openedStatus
+    if (openedStatus === 'open' && topBusinesses.length > 0) {
+      const now = new Date();
+      const currentDay = now.toLocaleDateString('en-US', { weekday: 'long' });
+      const currentTime = now.toTimeString().slice(0, 5);
+      topBusinesses = filterByOpenedStatus(topBusinesses, currentDay, currentTime);
+    }
 
     // Filter businesses with complete profiles if requested
     let finalBusinesses = topBusinesses;
@@ -792,7 +742,7 @@ exports.getNewlyAdded = async (req, res, next) => {
       return {
         ...business,
         distance,
-        isCurrentlyOpen: checkIfCurrentlyOpen(business.businessHours),
+        isCurrentlyOpen: checkIfCurrentlyOpen(business.builderPageId),
         distanceUnit: distance !== null ? 'km' : null
       };
     });
@@ -907,21 +857,6 @@ exports.getRecents = async (req, res, next) => {
       }
     }
 
-    // Apply "open now" filter - query by day/isClosed, then filter by time in post-query
-    if (openedStatus === 'open') {
-      const now = new Date();
-      const currentDay = now.toLocaleDateString('en-US', { weekday: 'long' });
-
-      query.businessHours = {
-        $elemMatch: {
-          day: { $regex: new RegExp(`^${currentDay}$`, 'i') },
-          isClosed: false,
-          open: { $exists: true, $ne: "", $ne: null },
-          close: { $exists: true, $ne: "", $ne: null }
-        }
-      };
-    }
-
     // Add geo-query if coordinates provided
     if (longitude && latitude) {
       query['location.coordinates'] = {
@@ -937,6 +872,7 @@ exports.getRecents = async (req, res, next) => {
 
     let businesses = await BusinessProfile.find(query)
       .populate('userId', 'firstName lastName')
+      .populate('builderPageId', 'serviceHours')
       .select('-__v')
       .lean();
 
@@ -1012,7 +948,7 @@ exports.getRecents = async (req, res, next) => {
       return {
         ...business,
         distance,
-        isCurrentlyOpen: checkIfCurrentlyOpen(business.businessHours),
+        isCurrentlyOpen: checkIfCurrentlyOpen(business.builderPageId),
         distanceUnit: distance !== null ? 'km' : null,
         lastViewedAt: viewInfo?.lastViewedAt || null,
         viewCount: viewInfo?.viewCount || 0
@@ -1097,19 +1033,6 @@ exports.exploreBusinesses = async (req, res, next) => {
       query['metrics.ratingCount'] = { $gte: 10 };
     }
 
-    if (opennow) {
-      const now = new Date();
-      const currentDay = now.toLocaleDateString('en-US', { weekday: 'long' });
-
-      query.businessHours = {
-        $elemMatch: {
-          day: { $regex: new RegExp(`^${currentDay}$`, 'i') },
-          isClosed: false,
-          open: { $exists: true, $ne: "", $ne: null },
-          close: { $exists: true, $ne: "", $ne: null }
-        }
-      };
-    }
 
     // Apply filters - use industryId (ObjectId) matching
     if (category) {
@@ -1156,20 +1079,6 @@ exports.exploreBusinesses = async (req, res, next) => {
       }
     }
 
-    if (openedStatus === 'open') {
-      const now = new Date();
-      const currentDay = now.toLocaleDateString('en-US', { weekday: 'long' });
-
-      query.businessHours = {
-        $elemMatch: {
-          day: { $regex: new RegExp(`^${currentDay}$`, 'i') },
-          isClosed: false,
-          open: { $exists: true, $ne: "", $ne: null },
-          close: { $exists: true, $ne: "", $ne: null }
-        }
-      };
-    }
-
     const sort = {};
 
     switch (sortBy) {
@@ -1213,6 +1122,7 @@ exports.exploreBusinesses = async (req, res, next) => {
 
     let businesses = await BusinessProfile.find(query)
         .populate('userId', 'firstName lastName')
+        .populate('builderPageId', 'serviceHours')
         .select('-__v')
         .sort(sort)
       .limit(fetchLimit)
@@ -1252,7 +1162,7 @@ exports.exploreBusinesses = async (req, res, next) => {
         distance = Math.round(distance * 100) / 100;
       }
 
-      const isCurrentlyOpen = checkIfCurrentlyOpen(business.businessHours);
+      const isCurrentlyOpen = checkIfCurrentlyOpen(business.builderPageId);
 
       return {
         ...business,
@@ -1390,49 +1300,276 @@ function calculateDistance(lat1, lon1, lat2, lon2) {
 }
 
 function normalizeTime(timeStr) {
-  if (!timeStr || typeof timeStr !== 'string') return null;
-  const parts = timeStr.split(':');
-  if (parts.length !== 2) return null;
-  const hours = parts[0].padStart(2, '0');
-  const minutes = parts[1].padStart(2, '0');
-  return `${hours}:${minutes}`;
+  if (!timeStr || typeof timeStr !== 'string') {
+    return null;
+  }
+  
+  const trimmed = timeStr.trim();
+  if (trimmed.length === 0) {
+    return null;
+  }
+  
+  const parts = trimmed.split(':');
+  if (parts.length !== 2) {
+    return null;
+  }
+  
+  const hoursStr = parts[0].trim();
+  const minutesStr = parts[1].trim();
+  
+  if (hoursStr.length === 0 || minutesStr.length === 0) {
+    return null;
+  }
+  
+  const hours = parseInt(hoursStr, 10);
+  const minutes = parseInt(minutesStr, 10);
+  
+  if (isNaN(hours) || isNaN(minutes)) {
+    return null;
+  }
+  
+  if (hours < 0 || hours > 23 || minutes < 0 || minutes > 59) {
+    return null;
+  }
+  
+  return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
 }
 
 function timeToMinutes(timeStr) {
-  if (!timeStr || typeof timeStr !== 'string') return null;
+  if (!timeStr || typeof timeStr !== 'string') {
+    return null;
+  }
+  
   const normalized = normalizeTime(timeStr);
-  if (!normalized) return null;
-  const [hours, minutes] = normalized.split(':').map(Number);
-  return hours * 60 + minutes;
+  if (!normalized) {
+    return null;
+  }
+  
+  const parts = normalized.split(':');
+  if (parts.length !== 2) {
+    return null;
+  }
+  
+  const hours = parseInt(parts[0], 10);
+  const minutes = parseInt(parts[1], 10);
+  
+  if (isNaN(hours) || isNaN(minutes)) {
+    return null;
+  }
+  
+  return (hours * 60) + minutes;
 }
 
-function filterByOpenedStatus(businesses, currentDay, currentTime) {
-  if (!businesses || businesses.length === 0) return businesses;
+function mapDayAbbreviationToFull(abbrev) {
+  const dayMap = {
+    'Mon': 'Monday',
+    'Tues': 'Tuesday',
+    'Wed': 'Wednesday',
+    'Thur': 'Thursday',
+    'Thu': 'Thursday',
+    'Fri': 'Friday',
+    'Sat': 'Saturday',
+    'Sun': 'Sunday'
+  };
+  return dayMap[abbrev] || abbrev;
+}
+
+function mapFullDayToAbbreviation(fullDay) {
+  if (!fullDay || typeof fullDay !== 'string') {
+    return null;
+  }
   
-  const currentTimeMinutes = timeToMinutes(currentTime);
-  if (currentTimeMinutes === null) return [];
+  const normalized = fullDay.trim();
+  if (normalized.length === 0) {
+    return null;
+  }
+  
+  const dayMap = {
+    'Monday': 'Mon',
+    'Tuesday': 'Tues',
+    'Wednesday': 'Wed',
+    'Thursday': 'Thur',
+    'Friday': 'Fri',
+    'Saturday': 'Sat',
+    'Sunday': 'Sun'
+  };
+  
+  return dayMap[normalized] || null;
+}
 
-  return businesses.filter(business => {
-    if (!business.businessHours || business.businessHours.length === 0) {
+function getServiceHoursForDay(serviceHours, currentDayFull) {
+  if (!serviceHours || typeof serviceHours !== 'object') {
+    return null;
+  }
+  
+  if (!serviceHours.weeklyHours || !Array.isArray(serviceHours.weeklyHours)) {
+    return null;
+  }
+  
+  if (serviceHours.weeklyHours.length === 0) {
+    return null;
+  }
+  
+  if (!currentDayFull || typeof currentDayFull !== 'string') {
+    return null;
+  }
+  
+  const currentDayAbbrev = mapFullDayToAbbreviation(currentDayFull);
+  if (!currentDayAbbrev) {
+    return null;
+  }
+  
+  const todayHours = serviceHours.weeklyHours.find(hours => {
+    if (!hours || typeof hours !== 'object') {
+      return false;
+    }
+    if (!hours.day || typeof hours.day !== 'string') {
+      return false;
+    }
+    const dayNormalized = hours.day.trim();
+    return dayNormalized === currentDayAbbrev || dayNormalized === currentDayFull.trim();
+  });
+
+  if (!todayHours || typeof todayHours !== 'object') {
+    return null;
+  }
+
+  if (todayHours.isClosed === true) {
+    return null;
+  }
+
+  if (!todayHours.startTime || typeof todayHours.startTime !== 'string' || todayHours.startTime.trim().length === 0) {
+    return null;
+  }
+  
+  if (!todayHours.endTime || typeof todayHours.endTime !== 'string' || todayHours.endTime.trim().length === 0) {
+    return null;
+  }
+
+  const normalizedStartTime = normalizeTime(todayHours.startTime);
+  const normalizedEndTime = normalizeTime(todayHours.endTime);
+  
+  if (!normalizedStartTime || !normalizedEndTime) {
+    return null;
+  }
+
+  return {
+    open: normalizedStartTime,
+    close: normalizedEndTime,
+    isClosed: todayHours.isClosed === true
+  };
+}
+
+function checkIfCurrentlyOpenFromServiceHours(serviceHours) {
+  if (!serviceHours || typeof serviceHours !== 'object') {
+    return false;
+  }
+  
+  if (!serviceHours.weeklyHours || !Array.isArray(serviceHours.weeklyHours)) {
+    return false;
+  }
+  
+  if (serviceHours.weeklyHours.length === 0) {
+    return false;
+  }
+
+  try {
+    const now = new Date();
+    if (isNaN(now.getTime())) {
+      return false;
+    }
+    
+    const currentDayFull = now.toLocaleDateString('en-US', { weekday: 'long' });
+    if (!currentDayFull || typeof currentDayFull !== 'string') {
+      return false;
+    }
+    
+    const currentTime = now.toTimeString().slice(0, 5);
+    if (!currentTime || typeof currentTime !== 'string') {
+      return false;
+    }
+    
+    const currentTimeMinutes = timeToMinutes(currentTime);
+    if (currentTimeMinutes === null || typeof currentTimeMinutes !== 'number' || isNaN(currentTimeMinutes)) {
       return false;
     }
 
-    const todayHours = business.businessHours.find(hours => 
-      hours.day && hours.day.toLowerCase() === currentDay.toLowerCase()
-    );
-
-    if (!todayHours || todayHours.isClosed) {
-      return false;
-    }
-
-    if (!todayHours.open || !todayHours.close) {
+    const todayHours = getServiceHoursForDay(serviceHours, currentDayFull);
+    if (!todayHours || typeof todayHours !== 'object') {
       return false;
     }
 
     const openMinutes = timeToMinutes(todayHours.open);
     const closeMinutes = timeToMinutes(todayHours.close);
 
-    if (openMinutes === null || closeMinutes === null) {
+    if (openMinutes === null || typeof openMinutes !== 'number' || isNaN(openMinutes)) {
+      return false;
+    }
+    
+    if (closeMinutes === null || typeof closeMinutes !== 'number' || isNaN(closeMinutes)) {
+      return false;
+    }
+
+    if (closeMinutes < openMinutes) {
+      return currentTimeMinutes >= openMinutes || currentTimeMinutes <= closeMinutes;
+    }
+
+    return currentTimeMinutes >= openMinutes && currentTimeMinutes <= closeMinutes;
+  } catch (error) {
+    return false;
+  }
+}
+
+function filterByOpenedStatus(businesses, currentDay, currentTime) {
+  if (!Array.isArray(businesses)) {
+    return [];
+  }
+  
+  if (businesses.length === 0) {
+    return [];
+  }
+  
+  if (!currentDay || typeof currentDay !== 'string' || currentDay.trim().length === 0) {
+    return [];
+  }
+  
+  if (!currentTime || typeof currentTime !== 'string' || currentTime.trim().length === 0) {
+    return [];
+  }
+  
+  const currentTimeMinutes = timeToMinutes(currentTime);
+  if (currentTimeMinutes === null || typeof currentTimeMinutes !== 'number' || isNaN(currentTimeMinutes)) {
+    return [];
+  }
+
+  return businesses.filter(business => {
+    if (!business || typeof business !== 'object') {
+      return false;
+    }
+    
+    if (!business.builderPageId || typeof business.builderPageId !== 'object') {
+      return false;
+    }
+    
+    if (!business.builderPageId.serviceHours || typeof business.builderPageId.serviceHours !== 'object') {
+      return false;
+    }
+
+    const serviceHours = business.builderPageId.serviceHours;
+    const todayHours = getServiceHoursForDay(serviceHours, currentDay);
+
+    if (!todayHours || typeof todayHours !== 'object') {
+      return false;
+    }
+
+    const openMinutes = timeToMinutes(todayHours.open);
+    const closeMinutes = timeToMinutes(todayHours.close);
+
+    if (openMinutes === null || typeof openMinutes !== 'number' || isNaN(openMinutes)) {
+      return false;
+    }
+    
+    if (closeMinutes === null || typeof closeMinutes !== 'number' || isNaN(closeMinutes)) {
       return false;
     }
 
@@ -1444,44 +1581,16 @@ function filterByOpenedStatus(businesses, currentDay, currentTime) {
   });
 }
 
-function checkIfCurrentlyOpen(businessHours) {
-  if (!businessHours || businessHours.length === 0) {
+function checkIfCurrentlyOpen(builderPage) {
+  if (!builderPage || typeof builderPage !== 'object') {
     return false;
   }
-
-  const now = new Date();
-  const currentDay = now.toLocaleDateString('en-US', { weekday: 'long' });
-  const currentTime = now.toTimeString().slice(0, 5);
-  const currentTimeMinutes = timeToMinutes(currentTime);
-
-  if (currentTimeMinutes === null) {
+  
+  if (!builderPage.serviceHours || typeof builderPage.serviceHours !== 'object') {
     return false;
   }
-
-  const todayHours = businessHours.find(hours => 
-    hours.day && hours.day.toLowerCase() === currentDay.toLowerCase()
-  );
-
-  if (!todayHours || todayHours.isClosed) {
-    return false;
-  }
-
-  if (!todayHours.open || !todayHours.close) {
-    return false;
-  }
-
-  const openMinutes = timeToMinutes(todayHours.open);
-  const closeMinutes = timeToMinutes(todayHours.close);
-
-  if (openMinutes === null || closeMinutes === null) {
-    return false;
-  }
-
-  if (closeMinutes < openMinutes) {
-    return currentTimeMinutes >= openMinutes || currentTimeMinutes <= closeMinutes;
-  }
-
-  return currentTimeMinutes >= openMinutes && currentTimeMinutes <= closeMinutes;
+  
+  return checkIfCurrentlyOpenFromServiceHours(builderPage.serviceHours);
 }
 
 async function hasCompleteProfileWithDetails(business) {

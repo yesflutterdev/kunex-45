@@ -55,16 +55,6 @@ exports.validateCreateBusinessProfile = (data) => {
       phone: Joi.string().trim().max(20).allow(''),
       website: Joi.string().uri().trim().allow('')
     }),
-    businessHours: Joi.array().items(
-      Joi.object({
-        day: Joi.string()
-          .valid('Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday')
-          .required(),
-        open: Joi.string().pattern(/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/).allow(''),
-        close: Joi.string().pattern(/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/).allow(''),
-        isClosed: Joi.boolean().default(false)
-      })
-    ).max(7),
     features: Joi.array().items(Joi.string().trim().max(100)).max(20),
     themeColor: Joi.object({
       primary: Joi.string().pattern(/^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$/).default('#007bff'),
@@ -175,16 +165,6 @@ exports.validateUpdateBusinessProfile = (data) => {
           })
       })
     }),
-    businessHours: Joi.array().items(
-      Joi.object({
-        day: Joi.string()
-          .valid('Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday')
-          .required(),
-        open: Joi.string().pattern(/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/).allow(''),
-        close: Joi.string().pattern(/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/).allow(''),
-        isClosed: Joi.boolean().default(false)
-      })
-    ).max(7),
     features: Joi.array().items(Joi.string().trim().max(100)).max(20),
     themeColor: Joi.object({
       primary: Joi.string().pattern(/^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$/),
@@ -347,29 +327,3 @@ exports.validateUsername = (data) => {
 };
 
 // Validate business hours
-exports.validateBusinessHours = (data) => {
-  const schema = Joi.array().items(
-    Joi.object({
-      day: Joi.string()
-        .valid('Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday')
-        .required(),
-      open: Joi.string().pattern(/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/).allow(''),
-      close: Joi.string().pattern(/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/).allow(''),
-      isClosed: Joi.boolean().default(false)
-    }).custom((value, helpers) => {
-      if (!value.isClosed && (!value.open || !value.close)) {
-        return helpers.error('businessHours.openClose');
-      }
-      if (!value.isClosed && value.open >= value.close) {
-        return helpers.error('businessHours.timeOrder');
-      }
-      return value;
-    })
-      .messages({
-        'businessHours.openClose': 'Open and close times are required when not closed',
-        'businessHours.timeOrder': 'Open time must be before close time'
-      })
-  ).max(7).unique('day');
-
-  return schema.validate(data);
-}; 

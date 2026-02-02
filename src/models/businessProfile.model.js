@@ -178,25 +178,6 @@ const businessProfileSchema = new mongoose.Schema(
         }
       }
     },
-    businessHours: [{
-      day: {
-        type: String,
-        enum: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'],
-        // required: true
-      },
-      open: {
-        type: String,
-        match: /^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/ // HH:MM format
-      },
-      close: {
-        type: String,
-        match: /^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/ // HH:MM format
-      },
-      isClosed: {
-        type: Boolean,
-        default: false
-      }
-    }],
     features: [{
       type: String,
       trim: true,
@@ -391,7 +372,6 @@ businessProfileSchema.methods.calculateCompletionPercentage = function () {
     'location.address',
     'location.city',
     'location.country',
-    'businessHours',
     'features',
     'virtualContact.firstName',
     'virtualContact.lastName'
@@ -447,7 +427,6 @@ businessProfileSchema.methods.updateRating = function (newRating) {
   return this.save();
 };
 
-// Pre-save hook to calculate completion percentage
 businessProfileSchema.pre('save', function (next) {
   if (this.isModified() && !this.isNew) {
     this.calculateCompletionPercentage();
@@ -455,26 +434,6 @@ businessProfileSchema.pre('save', function (next) {
   next();
 });
 
-// Virtual for getting business hours for a specific day
-businessProfileSchema.virtual('todayHours').get(function () {
-  const today = new Date().toLocaleDateString('en-US', { weekday: 'long' });
-  return this.businessHours.find(hours => hours.day === today);
-});
-
-// Virtual for checking if business is currently open
-businessProfileSchema.virtual('isCurrentlyOpen').get(function () {
-  const now = new Date();
-  const today = now.toLocaleDateString('en-US', { weekday: 'long' });
-  const currentTime = now.toTimeString().slice(0, 5); // HH:MM format
-
-  const todayHours = this.businessHours.find(hours => hours.day === today);
-
-  if (!todayHours || todayHours.isClosed) {
-    return false;
-  }
-
-  return currentTime >= todayHours.open && currentTime <= todayHours.close;
-});
 
 const BusinessProfile = mongoose.model('BusinessProfile', businessProfileSchema);
 

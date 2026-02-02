@@ -279,15 +279,16 @@ exports.validateNewlyAdded = (data) => {
   const schema = Joi.object({
     longitude: Joi.number().min(-180).max(180),
     latitude: Joi.number().min(-90).max(90),
-    maxDistance: Joi.number().min(1000).max(100000).default(25000), // 1km to 100km
+    maxDistance: Joi.number().min(1000).max(100000).default(25000),
     limit: Joi.number().min(1).max(30).default(15),
     category: Joi.string().trim().max(100).allow(''),
     priceRange: Joi.alternatives().try(
       Joi.string().valid('$', '$$', '$$$', '$$$$'),
       Joi.array().items(Joi.string().valid('$', '$$', '$$$', '$$$$'))
     ),
+    openedStatus: Joi.string().valid('open', 'closed', 'any').default('any'),
     completeProfile: Joi.boolean().default(false)
-  }).and('longitude', 'latitude'); // Both coordinates required if one is provided
+  }).and('longitude', 'latitude');
 
   return schema.validate(data, { abortEarly: false });
 }; 

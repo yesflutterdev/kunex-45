@@ -11,9 +11,215 @@ const {
   validateLocationSearch,
   validateImageUpload,
   validateMultipleImageUpload,
-  validateUsername,
-  validateBusinessHours
+  validateUsername
 } = require('../utils/businessProfileValidation');
+
+function normalizeTime(timeStr) {
+  if (!timeStr || typeof timeStr !== 'string') {
+    return null;
+  }
+  
+  const trimmed = timeStr.trim();
+  if (trimmed.length === 0) {
+    return null;
+  }
+  
+  const parts = trimmed.split(':');
+  if (parts.length !== 2) {
+    return null;
+  }
+  
+  const hoursStr = parts[0].trim();
+  const minutesStr = parts[1].trim();
+  
+  if (hoursStr.length === 0 || minutesStr.length === 0) {
+    return null;
+  }
+  
+  const hours = parseInt(hoursStr, 10);
+  const minutes = parseInt(minutesStr, 10);
+  
+  if (isNaN(hours) || isNaN(minutes)) {
+    return null;
+  }
+  
+  if (hours < 0 || hours > 23 || minutes < 0 || minutes > 59) {
+    return null;
+  }
+  
+  return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
+}
+
+function timeToMinutes(timeStr) {
+  if (!timeStr || typeof timeStr !== 'string') {
+    return null;
+  }
+  
+  const normalized = normalizeTime(timeStr);
+  if (!normalized) {
+    return null;
+  }
+  
+  const parts = normalized.split(':');
+  if (parts.length !== 2) {
+    return null;
+  }
+  
+  const hours = parseInt(parts[0], 10);
+  const minutes = parseInt(parts[1], 10);
+  
+  if (isNaN(hours) || isNaN(minutes)) {
+    return null;
+  }
+  
+  return (hours * 60) + minutes;
+}
+
+function mapFullDayToAbbreviation(fullDay) {
+  if (!fullDay || typeof fullDay !== 'string') {
+    return null;
+  }
+  
+  const normalized = fullDay.trim();
+  if (normalized.length === 0) {
+    return null;
+  }
+  
+  const dayMap = {
+    'Monday': 'Mon',
+    'Tuesday': 'Tues',
+    'Wednesday': 'Wed',
+    'Thursday': 'Thur',
+    'Friday': 'Fri',
+    'Saturday': 'Sat',
+    'Sunday': 'Sun'
+  };
+  
+  return dayMap[normalized] || null;
+}
+
+function getServiceHoursForDay(serviceHours, currentDayFull) {
+  if (!serviceHours || typeof serviceHours !== 'object') {
+    return null;
+  }
+  
+  if (!serviceHours.weeklyHours || !Array.isArray(serviceHours.weeklyHours)) {
+    return null;
+  }
+  
+  if (serviceHours.weeklyHours.length === 0) {
+    return null;
+  }
+  
+  if (!currentDayFull || typeof currentDayFull !== 'string') {
+    return null;
+  }
+  
+  const currentDayAbbrev = mapFullDayToAbbreviation(currentDayFull);
+  if (!currentDayAbbrev) {
+    return null;
+  }
+  
+  const todayHours = serviceHours.weeklyHours.find(hours => {
+    if (!hours || typeof hours !== 'object') {
+      return false;
+    }
+    if (!hours.day || typeof hours.day !== 'string') {
+      return false;
+    }
+    const dayNormalized = hours.day.trim();
+    return dayNormalized === currentDayAbbrev || dayNormalized === currentDayFull.trim();
+  });
+
+  if (!todayHours || typeof todayHours !== 'object') {
+    return null;
+  }
+
+  if (todayHours.isClosed === true) {
+    return null;
+  }
+
+  if (!todayHours.startTime || typeof todayHours.startTime !== 'string' || todayHours.startTime.trim().length === 0) {
+    return null;
+  }
+  
+  if (!todayHours.endTime || typeof todayHours.endTime !== 'string' || todayHours.endTime.trim().length === 0) {
+    return null;
+  }
+
+  const normalizedStartTime = normalizeTime(todayHours.startTime);
+  const normalizedEndTime = normalizeTime(todayHours.endTime);
+  
+  if (!normalizedStartTime || !normalizedEndTime) {
+    return null;
+  }
+
+  return {
+    open: normalizedStartTime,
+    close: normalizedEndTime,
+    isClosed: todayHours.isClosed === true
+  };
+}
+
+function checkIfCurrentlyOpenFromServiceHours(serviceHours) {
+  if (!serviceHours || typeof serviceHours !== 'object') {
+    return false;
+  }
+  
+  if (!serviceHours.weeklyHours || !Array.isArray(serviceHours.weeklyHours)) {
+    return false;
+  }
+  
+  if (serviceHours.weeklyHours.length === 0) {
+    return false;
+  }
+
+  try {
+    const now = new Date();
+    if (isNaN(now.getTime())) {
+      return false;
+    }
+    
+    const currentDayFull = now.toLocaleDateString('en-US', { weekday: 'long' });
+    if (!currentDayFull || typeof currentDayFull !== 'string') {
+      return false;
+    }
+    
+    const currentTime = now.toTimeString().slice(0, 5);
+    if (!currentTime || typeof currentTime !== 'string') {
+      return false;
+    }
+    
+    const currentTimeMinutes = timeToMinutes(currentTime);
+    if (currentTimeMinutes === null || typeof currentTimeMinutes !== 'number' || isNaN(currentTimeMinutes)) {
+      return false;
+    }
+
+    const todayHours = getServiceHoursForDay(serviceHours, currentDayFull);
+    if (!todayHours || typeof todayHours !== 'object') {
+      return false;
+    }
+
+    const openMinutes = timeToMinutes(todayHours.open);
+    const closeMinutes = timeToMinutes(todayHours.close);
+
+    if (openMinutes === null || typeof openMinutes !== 'number' || isNaN(openMinutes)) {
+      return false;
+    }
+    
+    if (closeMinutes === null || typeof closeMinutes !== 'number' || isNaN(closeMinutes)) {
+      return false;
+    }
+
+    if (closeMinutes < openMinutes) {
+      return currentTimeMinutes >= openMinutes || currentTimeMinutes <= closeMinutes;
+    }
+
+    return currentTimeMinutes >= openMinutes && currentTimeMinutes <= closeMinutes;
+  } catch (error) {
+    return false;
+  }
+}
 
 // Create business profile
 exports.createProfile = async (req, res, next) => {
@@ -199,7 +405,8 @@ exports.getProfile = async (req, res, next) => {
     const userId = req.user.id;
 
     const profile = await BusinessProfile.findOne({ userId })
-      .populate('userId', 'email firstName lastName');
+      .populate('userId', 'email firstName lastName')
+      .populate('builderPageId', 'serviceHours');
 
     if (!profile) {
       return res.status(404).json({
@@ -208,16 +415,34 @@ exports.getProfile = async (req, res, next) => {
       });
     }
 
-    // Calculate completion percentage
     const completionPercentage = profile.calculateCompletionPercentage();
+    const now = new Date();
+    let todayHours = null;
+    let isCurrentlyOpen = false;
+    
+    if (profile.builderPageId && typeof profile.builderPageId === 'object' && profile.builderPageId.serviceHours) {
+      try {
+        const now = new Date();
+        if (!isNaN(now.getTime())) {
+          const currentDay = now.toLocaleDateString('en-US', { weekday: 'long' });
+          if (currentDay && typeof currentDay === 'string') {
+            todayHours = getServiceHoursForDay(profile.builderPageId.serviceHours, currentDay);
+            isCurrentlyOpen = checkIfCurrentlyOpenFromServiceHours(profile.builderPageId.serviceHours);
+          }
+        }
+      } catch (error) {
+        todayHours = null;
+        isCurrentlyOpen = false;
+      }
+    }
 
     res.status(200).json({
       success: true,
       data: {
         profile,
         completionPercentage,
-        todayHours: profile.todayHours,
-        isCurrentlyOpen: profile.isCurrentlyOpen
+        todayHours,
+        isCurrentlyOpen
       },
     });
   } catch (error) {
@@ -232,6 +457,7 @@ exports.getPublicProfile = async (req, res, next) => {
 
     const profile = await BusinessProfile.findOne({ username })
       .populate('userId', 'firstName lastName')
+      .populate('builderPageId', 'serviceHours')
       .select('-__v');
 
     if (!profile) {
@@ -241,15 +467,33 @@ exports.getPublicProfile = async (req, res, next) => {
       });
     }
 
-    // Increment view count
     await profile.incrementViewCount();
+    
+    let todayHours = null;
+    let isCurrentlyOpen = false;
+    
+    if (profile.builderPageId && typeof profile.builderPageId === 'object' && profile.builderPageId.serviceHours) {
+      try {
+        const now = new Date();
+        if (!isNaN(now.getTime())) {
+          const currentDay = now.toLocaleDateString('en-US', { weekday: 'long' });
+          if (currentDay && typeof currentDay === 'string') {
+            todayHours = getServiceHoursForDay(profile.builderPageId.serviceHours, currentDay);
+            isCurrentlyOpen = checkIfCurrentlyOpenFromServiceHours(profile.builderPageId.serviceHours);
+          }
+        }
+      } catch (error) {
+        todayHours = null;
+        isCurrentlyOpen = false;
+      }
+    }
 
     res.status(200).json({
       success: true,
       data: {
         profile,
-        todayHours: profile.todayHours,
-        isCurrentlyOpen: profile.isCurrentlyOpen
+        todayHours,
+        isCurrentlyOpen
       },
     });
   } catch (error) {
@@ -510,24 +754,6 @@ exports.getProfilesByIndustryParam = async (req, res, next) => {
       }
     }
 
-    if (openNow === 'true' || openNow === true) {
-      const now = new Date();
-      const currentDay = now.toLocaleDateString('en-US', { weekday: 'long' });
-      const currentTime = now.toTimeString().slice(0, 5);
-
-      query.businessHours = {
-        $elemMatch: {
-          day: currentDay,
-          isClosed: false,
-          $and: [
-            { open: { $ne: "" } },
-            { close: { $ne: "" } },
-            { open: { $lte: currentTime } },
-            { close: { $gte: currentTime } }
-          ]
-        }
-      };
-    }
 
     if (nearby === 'true' || nearby === true) {
       if (!latitude || !longitude) {
@@ -955,25 +1181,6 @@ exports.searchProfiles = async (req, res, next) => {
       query['metrics.ratingAverage'] = { $gte: minRating };
     }
 
-    // Apply "open now" filter
-    if (openedStatus === 'open') {
-      const now = new Date();
-      const currentDay = now.toLocaleDateString('en-US', { weekday: 'long' });
-      const currentTime = now.toTimeString().slice(0, 5);
-
-      query.businessHours = {
-        $elemMatch: {
-          day: currentDay,
-          isClosed: false,
-          $and: [
-            { open: { $ne: "" } },
-            { close: { $ne: "" } },
-            { open: { $lte: currentTime } },
-            { close: { $gte: currentTime } }
-          ]
-        }
-      };
-    }
 
     // Build sort object
     const sort = {};
@@ -987,16 +1194,62 @@ exports.searchProfiles = async (req, res, next) => {
     const skip = (page - 1) * limit;
 
     // Execute query
-    const [profiles, totalCount] = await Promise.all([
-      BusinessProfile.find(query)
-        .populate('userId', 'firstName lastName')
-        .select('-__v')
-        .sort(sort)
-        .skip(skip)
-        .limit(limit)
-        .lean(),
-      BusinessProfile.countDocuments(query)
-    ]);
+    let profiles = await BusinessProfile.find(query)
+      .populate('userId', 'firstName lastName')
+      .populate('builderPageId', 'serviceHours')
+      .select('-__v')
+      .sort(sort)
+      .skip(skip)
+      .limit(limit)
+      .lean();
+
+    if (openedStatus === 'open' && profiles.length > 0) {
+      const now = new Date();
+      const currentDay = now.toLocaleDateString('en-US', { weekday: 'long' });
+      if (!currentDay || typeof currentDay !== 'string') {
+        profiles = [];
+      } else {
+        const currentTime = now.toTimeString().slice(0, 5);
+        if (!currentTime || typeof currentTime !== 'string') {
+          profiles = [];
+        } else {
+          const currentTimeMinutes = timeToMinutes(currentTime);
+          if (currentTimeMinutes === null || typeof currentTimeMinutes !== 'number' || isNaN(currentTimeMinutes)) {
+            profiles = [];
+          } else {
+            profiles = profiles.filter(profile => {
+              if (!profile || typeof profile !== 'object') {
+                return false;
+              }
+              if (!profile.builderPageId || typeof profile.builderPageId !== 'object') {
+                return false;
+              }
+              if (!profile.builderPageId.serviceHours || typeof profile.builderPageId.serviceHours !== 'object') {
+                return false;
+              }
+              const todayHours = getServiceHoursForDay(profile.builderPageId.serviceHours, currentDay);
+              if (!todayHours || typeof todayHours !== 'object') {
+                return false;
+              }
+              const openMinutes = timeToMinutes(todayHours.open);
+              const closeMinutes = timeToMinutes(todayHours.close);
+              if (openMinutes === null || typeof openMinutes !== 'number' || isNaN(openMinutes)) {
+                return false;
+              }
+              if (closeMinutes === null || typeof closeMinutes !== 'number' || isNaN(closeMinutes)) {
+                return false;
+              }
+              if (closeMinutes < openMinutes) {
+                return currentTimeMinutes >= openMinutes || currentTimeMinutes <= closeMinutes;
+              }
+              return currentTimeMinutes >= openMinutes && currentTimeMinutes <= closeMinutes;
+            });
+          }
+        }
+      }
+    }
+
+    const totalCount = await BusinessProfile.countDocuments(query);
 
     // Calculate pagination info
     const totalPages = Math.ceil(totalCount / limit);
@@ -1074,32 +1327,66 @@ exports.findNearbyProfiles = async (req, res, next) => {
       query['metrics.ratingAverage'] = { $gte: minRating };
     }
 
-    // Apply "open now" filter
-    if (openedStatus === 'open') {
-      const now = new Date();
-      const currentDay = now.toLocaleDateString('en-US', { weekday: 'long' });
-      const currentTime = now.toTimeString().slice(0, 5);
-
-      query.businessHours = {
-        $elemMatch: {
-          day: currentDay,
-          isClosed: false,
-          $and: [
-            { open: { $ne: "" } },
-            { close: { $ne: "" } },
-            { open: { $lte: currentTime } },
-            { close: { $gte: currentTime } }
-          ]
-        }
-      };
-    }
-
-    // Execute query
-    const profiles = await BusinessProfile.find(query)
+    let profiles = await BusinessProfile.find(query)
       .populate('userId', 'firstName lastName')
+      .populate('builderPageId', 'serviceHours')
       .select('-__v')
       .limit(limit)
       .lean();
+
+    if (openedStatus === 'open' && profiles.length > 0) {
+      const now = new Date();
+      const currentDay = now.toLocaleDateString('en-US', { weekday: 'long' });
+      if (!currentDay || typeof currentDay !== 'string') {
+        return profiles;
+      }
+      
+      const currentTime = now.toTimeString().slice(0, 5);
+      if (!currentTime || typeof currentTime !== 'string') {
+        return profiles;
+      }
+      
+      const currentTimeMinutes = timeToMinutes(currentTime);
+      if (currentTimeMinutes === null || typeof currentTimeMinutes !== 'number' || isNaN(currentTimeMinutes)) {
+        return profiles;
+      }
+      
+      profiles = profiles.filter(profile => {
+        if (!profile || typeof profile !== 'object') {
+          return false;
+        }
+        
+        if (!profile.builderPageId || typeof profile.builderPageId !== 'object') {
+          return false;
+        }
+        
+        if (!profile.builderPageId.serviceHours || typeof profile.builderPageId.serviceHours !== 'object') {
+          return false;
+        }
+        
+        const todayHours = getServiceHoursForDay(profile.builderPageId.serviceHours, currentDay);
+        if (!todayHours || typeof todayHours !== 'object') {
+          return false;
+        }
+        
+        const openMinutes = timeToMinutes(todayHours.open);
+        const closeMinutes = timeToMinutes(todayHours.close);
+        
+        if (openMinutes === null || typeof openMinutes !== 'number' || isNaN(openMinutes)) {
+          return false;
+        }
+        
+        if (closeMinutes === null || typeof closeMinutes !== 'number' || isNaN(closeMinutes)) {
+          return false;
+        }
+        
+        if (closeMinutes < openMinutes) {
+          return currentTimeMinutes >= openMinutes || currentTimeMinutes <= closeMinutes;
+        }
+        
+        return currentTimeMinutes >= openMinutes && currentTimeMinutes <= closeMinutes;
+      });
+    }
 
     // Calculate distances
     const profilesWithDistance = profiles.map(profile => {
@@ -1159,22 +1446,10 @@ exports.checkUsernameAvailability = async (req, res, next) => {
   }
 };
 
-// Update business hours
 exports.updateBusinessHours = async (req, res, next) => {
   try {
     const userId = req.user.id;
 
-    // Validate business hours
-    const { error, value } = validateBusinessHours(req.body);
-    if (error) {
-      return res.status(400).json({
-        success: false,
-        message: 'Validation error',
-        errors: error.details.map(detail => detail.message),
-      });
-    }
-
-    // Find profile
     const profile = await BusinessProfile.findOne({ userId });
     if (!profile) {
       return res.status(404).json({
@@ -1183,17 +1458,54 @@ exports.updateBusinessHours = async (req, res, next) => {
       });
     }
 
-    // Update business hours
-    profile.businessHours = value;
-    await profile.save();
+    const builderPage = await BuilderPage.findOne({ businessId: profile._id });
+    if (!builderPage) {
+      return res.status(404).json({
+        success: false,
+        message: 'Builder page not found. Please create a page first.',
+      });
+    }
+
+    const { weeklyHours } = req.body;
+    if (!weeklyHours || !Array.isArray(weeklyHours)) {
+      return res.status(400).json({
+        success: false,
+        message: 'weeklyHours array is required',
+      });
+    }
+
+    builderPage.serviceHours.weeklyHours = weeklyHours;
+    if (builderPage.serviceHours.type !== 'event-dates') {
+      builderPage.serviceHours.type = 'weekly';
+    } else {
+      builderPage.serviceHours.type = 'both';
+    }
+    await builderPage.save();
+
+    let todayHours = null;
+    let isCurrentlyOpen = false;
+    
+    try {
+      const now = new Date();
+      if (!isNaN(now.getTime()) && builderPage.serviceHours) {
+        const currentDay = now.toLocaleDateString('en-US', { weekday: 'long' });
+        if (currentDay && typeof currentDay === 'string') {
+          todayHours = getServiceHoursForDay(builderPage.serviceHours, currentDay);
+          isCurrentlyOpen = checkIfCurrentlyOpenFromServiceHours(builderPage.serviceHours);
+        }
+      }
+    } catch (error) {
+      todayHours = null;
+      isCurrentlyOpen = false;
+    }
 
     res.status(200).json({
       success: true,
       message: 'Business hours updated successfully',
       data: {
-        businessHours: profile.businessHours,
-        todayHours: profile.todayHours,
-        isCurrentlyOpen: profile.isCurrentlyOpen
+        serviceHours: builderPage.serviceHours,
+        todayHours,
+        isCurrentlyOpen
       },
     });
   } catch (error) {
@@ -1206,7 +1518,8 @@ exports.getAnalytics = async (req, res, next) => {
   try {
     const userId = req.user.id;
 
-    const profile = await BusinessProfile.findOne({ userId });
+    const profile = await BusinessProfile.findOne({ userId })
+      .populate('builderPageId', 'serviceHours');
     if (!profile) {
       return res.status(404).json({
         success: false,
@@ -1214,15 +1527,14 @@ exports.getAnalytics = async (req, res, next) => {
       });
     }
 
-    // Get additional analytics data
     const analytics = {
       metrics: profile.metrics,
       completionPercentage: profile.completionPercentage,
-      profileAge: Math.floor((Date.now() - profile.createdAt) / (1000 * 60 * 60 * 24)), // days
+      profileAge: Math.floor((Date.now() - profile.createdAt) / (1000 * 60 * 60 * 24)),
       lastUpdated: profile.updatedAt,
       hasLogo: !!profile.logo,
       hasCoverImages: profile.coverImages && profile.coverImages.length > 0,
-      hasBusinessHours: profile.businessHours && profile.businessHours.length > 0,
+      hasBusinessHours: profile.builderPageId && profile.builderPageId.serviceHours && profile.builderPageId.serviceHours.weeklyHours && profile.builderPageId.serviceHours.weeklyHours.length > 0,
       hasLocation: !!(profile.location && profile.location.address),
       hasCoordinates: !!(profile.location && profile.location.coordinates && profile.location.coordinates.coordinates)
     };
