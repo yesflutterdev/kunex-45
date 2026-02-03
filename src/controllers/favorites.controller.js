@@ -250,15 +250,6 @@ exports.addFavorite = async (req, res, next) => {
           widgetName: content.name,
           widgetType: content.type
         };
-      } else {
-        populatedFavorite.widgetData = {
-          _id: content._id,
-          name: content.name,
-          type: content.type,
-          settings: content.settings,
-          layout: content.layout,
-          status: content.status
-        };
       }
     } else {
       populatedFavorite.widgetData = {

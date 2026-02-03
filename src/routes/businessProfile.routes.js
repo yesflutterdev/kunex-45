@@ -225,9 +225,11 @@ const { upload } = require('../utils/cloudinary');
  *             viewCount:
  *               type: number
  *               minimum: 0
+ *               description: Total view count (verified from both BusinessProfile and BuilderPage, uses maximum value)
  *             favoriteCount:
  *               type: number
  *               minimum: 0
+ *               description: Total favorite count (verified from both BusinessProfile and BuilderPage, uses maximum value)
  *             ratingAverage:
  *               type: number
  *               minimum: 0
@@ -235,6 +237,12 @@ const { upload } = require('../utils/cloudinary');
  *             ratingCount:
  *               type: number
  *               minimum: 0
+ *             ctr:
+ *               type: number
+ *               minimum: 0
+ *               maximum: 100
+ *               description: Click-Through Rate percentage calculated from BuilderPage analytics (clicks/pageViews * 100). Returns 0 if no page views.
+ *               example: 14.29
  *         createdAt:
  *           type: string
  *           format: date-time
@@ -484,12 +492,25 @@ router.post('/', authenticate, isVerified, businessProfileController.createProfi
  *                   properties:
  *                     profile:
  *                       $ref: '#/components/schemas/BusinessProfile'
+ *                       description: Business profile with verified metrics (viewCount, favoriteCount include data from both BusinessProfile and BuilderPage)
  *                     completionPercentage:
  *                       type: number
+ *                       description: Profile completion percentage
  *                     todayHours:
  *                       type: object
+ *                       description: Today's service hours based on business timezone
+ *                       properties:
+ *                         open:
+ *                           type: string
+ *                           example: "09:00"
+ *                         close:
+ *                           type: string
+ *                           example: "22:00"
+ *                         isClosed:
+ *                           type: boolean
  *                     isCurrentlyOpen:
  *                       type: boolean
+ *                       description: Whether business is currently open based on service hours and timezone
  *       404:
  *         description: Business profile not found
  *       401:

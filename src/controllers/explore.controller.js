@@ -18,6 +18,7 @@ const {
   calculateDistancesWithGoogleMaps,
   calculateHaversineDistance
 } = require('../utils/googleMaps');
+const { validateTimezone } = require('../utils/timezoneValidation');
 
 exports.getNearbyBusinesses = async (req, res, next) => {
   try {
@@ -139,10 +140,7 @@ exports.getNearbyBusinesses = async (req, res, next) => {
       .lean();
 
     if (openedStatus === 'open' && businesses.length > 0) {
-      const now = new Date();
-      const currentDay = now.toLocaleDateString('en-US', { weekday: 'long' });
-      const currentTime = now.toTimeString().slice(0, 5);
-      businesses = filterByOpenedStatus(businesses, currentDay, currentTime);
+      businesses = filterByOpenedStatus(businesses);
     }
 
     let finalBusinesses = businesses;
@@ -357,10 +355,7 @@ exports.getTopPicks = async (req, res, next) => {
 
     // Post-query filtering for openedStatus
     if (openedStatus === 'open' && businesses.length > 0) {
-      const now = new Date();
-      const currentDay = now.toLocaleDateString('en-US', { weekday: 'long' });
-      const currentTime = now.toTimeString().slice(0, 5);
-      businesses = filterByOpenedStatus(businesses, currentDay, currentTime);
+      businesses = filterByOpenedStatus(businesses);
     }
 
     const businessesWithScores = businesses.map(business => {
@@ -539,10 +534,7 @@ exports.getOnTheRise = async (req, res, next) => {
 
     // Post-query filtering for openedStatus
     if (openedStatus === 'open' && businesses.length > 0) {
-      const now = new Date();
-      const currentDay = now.toLocaleDateString('en-US', { weekday: 'long' });
-      const currentTime = now.toTimeString().slice(0, 5);
-      businesses = filterByOpenedStatus(businesses, currentDay, currentTime);
+      businesses = filterByOpenedStatus(businesses);
     }
 
     const businessesWithScores = businesses.map(business => {
@@ -878,10 +870,7 @@ exports.getRecents = async (req, res, next) => {
 
     // Post-query filtering for openedStatus
     if (openedStatus === 'open' && businesses.length > 0) {
-      const now = new Date();
-      const currentDay = now.toLocaleDateString('en-US', { weekday: 'long' });
-      const currentTime = now.toTimeString().slice(0, 5);
-      businesses = filterByOpenedStatus(businesses, currentDay, currentTime);
+      businesses = filterByOpenedStatus(businesses);
     }
 
     const businessesWithViewInfo = businesses.map(business => {
@@ -1129,10 +1118,7 @@ exports.exploreBusinesses = async (req, res, next) => {
       .lean();
 
     if ((openedStatus === 'open' || opennow) && businesses.length > 0) {
-      const now = new Date();
-      const currentDay = now.toLocaleDateString('en-US', { weekday: 'long' });
-      const currentTime = now.toTimeString().slice(0, 5);
-      businesses = filterByOpenedStatus(businesses, currentDay, currentTime);
+      businesses = filterByOpenedStatus(businesses);
     }
 
     let finalBusinesses = businesses;
@@ -1282,7 +1268,6 @@ async function getIndustryIdsFromCategory(category) {
     
     return industries.map(ind => ind._id);
   } catch (error) {
-    console.error('[getIndustryIdsFromCategory] Error:', error);
     return [];
   }
 }
@@ -1397,8 +1382,118 @@ function mapFullDayToAbbreviation(fullDay) {
   return dayMap[normalized] || null;
 }
 
+function timeToSeconds(timeStr) {
+  if (!timeStr || typeof timeStr !== 'string') {
+    return null;
+  }
+  
+  const trimmed = timeStr.trim();
+  if (trimmed.length === 0) {
+    return null;
+  }
+  
+  const parts = trimmed.split(':');
+  if (parts.length < 2 || parts.length > 3) {
+    return null;
+  }
+  
+  const hoursStr = parts[0].trim();
+  const minutesStr = parts[1].trim();
+  const secondsStr = parts[2] ? parts[2].trim() : '00';
+  
+  if (hoursStr.length === 0 || minutesStr.length === 0) {
+    return null;
+  }
+  
+  const hours = parseInt(hoursStr, 10);
+  const minutes = parseInt(minutesStr, 10);
+  const seconds = parseInt(secondsStr, 10);
+  
+  if (isNaN(hours) || isNaN(minutes) || isNaN(seconds)) {
+    return null;
+  }
+  
+  if (hours < 0 || hours > 23 || minutes < 0 || minutes > 59 || seconds < 0 || seconds > 59) {
+    return null;
+  }
+  
+  return (hours * 3600) + (minutes * 60) + seconds;
+}
+
+function getCurrentTimeInTimezone(timezone) {
+  if (!timezone || typeof timezone !== 'string' || timezone.trim().length === 0) {
+    return null;
+  }
+  
+  try {
+    const now = new Date();
+    if (!now || isNaN(now.getTime())) {
+      return null;
+    }
+    
+    const formatter = new Intl.DateTimeFormat('en-US', {
+      timeZone: timezone.trim(),
+      weekday: 'long',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false
+    });
+    
+    const parts = formatter.formatToParts(now);
+    if (!parts || !Array.isArray(parts) || parts.length === 0) {
+      return null;
+    }
+    
+    let day = null;
+    let hour = null;
+    let minute = null;
+    let second = null;
+    
+    for (const part of parts) {
+      if (!part || typeof part !== 'object') {
+        continue;
+      }
+      if (part.type === 'weekday' && part.value) {
+        day = part.value;
+      } else if (part.type === 'hour' && part.value) {
+        hour = part.value;
+      } else if (part.type === 'minute' && part.value) {
+        minute = part.value;
+      } else if (part.type === 'second' && part.value) {
+        second = part.value;
+      }
+    }
+    
+    if (!day || !hour || !minute || !second || 
+        typeof day !== 'string' || typeof hour !== 'string' || 
+        typeof minute !== 'string' || typeof second !== 'string') {
+      return null;
+    }
+    
+    const hourNum = parseInt(hour, 10);
+    const minuteNum = parseInt(minute, 10);
+    const secondNum = parseInt(second, 10);
+    
+    if (isNaN(hourNum) || isNaN(minuteNum) || isNaN(secondNum) ||
+        hourNum < 0 || hourNum > 23 || minuteNum < 0 || minuteNum > 59 || 
+        secondNum < 0 || secondNum > 59) {
+      return null;
+    }
+    
+    const time = `${hour.padStart(2, '0')}:${minute.padStart(2, '0')}:${second.padStart(2, '0')}`;
+    
+    return {
+      day: day.trim(),
+      time: time
+    };
+  } catch (error) {
+    return null;
+  }
+}
+
 function getServiceHoursForDay(serviceHours, currentDayFull) {
-  if (!serviceHours || typeof serviceHours !== 'object') {
+  if (!serviceHours || typeof serviceHours !== 'object' || Array.isArray(serviceHours)) {
     return null;
   }
   
@@ -1410,27 +1505,30 @@ function getServiceHoursForDay(serviceHours, currentDayFull) {
     return null;
   }
   
-  if (!currentDayFull || typeof currentDayFull !== 'string') {
+  if (!currentDayFull || typeof currentDayFull !== 'string' || currentDayFull.trim().length === 0) {
     return null;
   }
   
   const currentDayAbbrev = mapFullDayToAbbreviation(currentDayFull);
-  if (!currentDayAbbrev) {
+  if (!currentDayAbbrev || typeof currentDayAbbrev !== 'string') {
     return null;
   }
   
   const todayHours = serviceHours.weeklyHours.find(hours => {
-    if (!hours || typeof hours !== 'object') {
+    if (!hours || typeof hours !== 'object' || Array.isArray(hours)) {
       return false;
     }
     if (!hours.day || typeof hours.day !== 'string') {
       return false;
     }
     const dayNormalized = hours.day.trim();
+    if (dayNormalized.length === 0) {
+      return false;
+    }
     return dayNormalized === currentDayAbbrev || dayNormalized === currentDayFull.trim();
   });
 
-  if (!todayHours || typeof todayHours !== 'object') {
+  if (!todayHours || typeof todayHours !== 'object' || Array.isArray(todayHours)) {
     return null;
   }
 
@@ -1449,7 +1547,8 @@ function getServiceHoursForDay(serviceHours, currentDayFull) {
   const normalizedStartTime = normalizeTime(todayHours.startTime);
   const normalizedEndTime = normalizeTime(todayHours.endTime);
   
-  if (!normalizedStartTime || !normalizedEndTime) {
+  if (!normalizedStartTime || !normalizedEndTime || 
+      typeof normalizedStartTime !== 'string' || typeof normalizedEndTime !== 'string') {
     return null;
   }
 
@@ -1461,7 +1560,7 @@ function getServiceHoursForDay(serviceHours, currentDayFull) {
 }
 
 function checkIfCurrentlyOpenFromServiceHours(serviceHours) {
-  if (!serviceHours || typeof serviceHours !== 'object') {
+  if (!serviceHours || typeof serviceHours !== 'object' || Array.isArray(serviceHours)) {
     return false;
   }
   
@@ -1474,53 +1573,56 @@ function checkIfCurrentlyOpenFromServiceHours(serviceHours) {
   }
 
   try {
-    const now = new Date();
-    if (isNaN(now.getTime())) {
+    const timezone = validateTimezone(serviceHours.timezone, 'UTC');
+    if (!timezone || typeof timezone !== 'string') {
       return false;
     }
     
-    const currentDayFull = now.toLocaleDateString('en-US', { weekday: 'long' });
-    if (!currentDayFull || typeof currentDayFull !== 'string') {
+    const currentTimeInfo = getCurrentTimeInTimezone(timezone);
+    if (!currentTimeInfo || typeof currentTimeInfo !== 'object' || 
+        !currentTimeInfo.time || !currentTimeInfo.day ||
+        typeof currentTimeInfo.time !== 'string' || typeof currentTimeInfo.day !== 'string') {
       return false;
     }
     
-    const currentTime = now.toTimeString().slice(0, 5);
-    if (!currentTime || typeof currentTime !== 'string') {
-      return false;
-    }
+    const currentDayFull = currentTimeInfo.day;
+    const currentTime = currentTimeInfo.time;
     
-    const currentTimeMinutes = timeToMinutes(currentTime);
-    if (currentTimeMinutes === null || typeof currentTimeMinutes !== 'number' || isNaN(currentTimeMinutes)) {
+    const currentTimeSeconds = timeToSeconds(currentTime);
+    if (currentTimeSeconds === null || typeof currentTimeSeconds !== 'number' || 
+        isNaN(currentTimeSeconds) || currentTimeSeconds < 0 || currentTimeSeconds >= 86400) {
       return false;
     }
 
     const todayHours = getServiceHoursForDay(serviceHours, currentDayFull);
-    if (!todayHours || typeof todayHours !== 'object') {
+    if (!todayHours || typeof todayHours !== 'object' || Array.isArray(todayHours)) {
       return false;
     }
 
-    const openMinutes = timeToMinutes(todayHours.open);
-    const closeMinutes = timeToMinutes(todayHours.close);
+    const openSeconds = timeToSeconds(todayHours.open);
+    const closeSeconds = timeToSeconds(todayHours.close);
 
-    if (openMinutes === null || typeof openMinutes !== 'number' || isNaN(openMinutes)) {
+    if (openSeconds === null || typeof openSeconds !== 'number' || 
+        isNaN(openSeconds) || openSeconds < 0 || openSeconds >= 86400) {
       return false;
     }
     
-    if (closeMinutes === null || typeof closeMinutes !== 'number' || isNaN(closeMinutes)) {
+    if (closeSeconds === null || typeof closeSeconds !== 'number' || 
+        isNaN(closeSeconds) || closeSeconds < 0 || closeSeconds >= 86400) {
       return false;
     }
 
-    if (closeMinutes < openMinutes) {
-      return currentTimeMinutes >= openMinutes || currentTimeMinutes <= closeMinutes;
+    if (closeSeconds < openSeconds) {
+      return currentTimeSeconds >= openSeconds || currentTimeSeconds < closeSeconds;
     }
 
-    return currentTimeMinutes >= openMinutes && currentTimeMinutes <= closeMinutes;
+    return currentTimeSeconds >= openSeconds && currentTimeSeconds < closeSeconds;
   } catch (error) {
     return false;
   }
 }
 
-function filterByOpenedStatus(businesses, currentDay, currentTime) {
+function filterByOpenedStatus(businesses) {
   if (!Array.isArray(businesses)) {
     return [];
   }
@@ -1528,65 +1630,77 @@ function filterByOpenedStatus(businesses, currentDay, currentTime) {
   if (businesses.length === 0) {
     return [];
   }
-  
-  if (!currentDay || typeof currentDay !== 'string' || currentDay.trim().length === 0) {
-    return [];
-  }
-  
-  if (!currentTime || typeof currentTime !== 'string' || currentTime.trim().length === 0) {
-    return [];
-  }
-  
-  const currentTimeMinutes = timeToMinutes(currentTime);
-  if (currentTimeMinutes === null || typeof currentTimeMinutes !== 'number' || isNaN(currentTimeMinutes)) {
-    return [];
-  }
 
   return businesses.filter(business => {
-    if (!business || typeof business !== 'object') {
+    if (!business || typeof business !== 'object' || Array.isArray(business)) {
       return false;
     }
     
-    if (!business.builderPageId || typeof business.builderPageId !== 'object') {
+    if (!business.builderPageId || typeof business.builderPageId !== 'object' || 
+        Array.isArray(business.builderPageId)) {
       return false;
     }
     
-    if (!business.builderPageId.serviceHours || typeof business.builderPageId.serviceHours !== 'object') {
+    if (!business.builderPageId.serviceHours || typeof business.builderPageId.serviceHours !== 'object' ||
+        Array.isArray(business.builderPageId.serviceHours)) {
       return false;
     }
 
     const serviceHours = business.builderPageId.serviceHours;
-    const todayHours = getServiceHoursForDay(serviceHours, currentDay);
-
-    if (!todayHours || typeof todayHours !== 'object') {
-      return false;
-    }
-
-    const openMinutes = timeToMinutes(todayHours.open);
-    const closeMinutes = timeToMinutes(todayHours.close);
-
-    if (openMinutes === null || typeof openMinutes !== 'number' || isNaN(openMinutes)) {
+    const timezone = validateTimezone(serviceHours.timezone, 'UTC');
+    if (!timezone || typeof timezone !== 'string') {
       return false;
     }
     
-    if (closeMinutes === null || typeof closeMinutes !== 'number' || isNaN(closeMinutes)) {
+    const currentTimeInfo = getCurrentTimeInTimezone(timezone);
+    if (!currentTimeInfo || typeof currentTimeInfo !== 'object' ||
+        !currentTimeInfo.time || !currentTimeInfo.day ||
+        typeof currentTimeInfo.time !== 'string' || typeof currentTimeInfo.day !== 'string') {
+      return false;
+    }
+    
+    const businessCurrentDay = currentTimeInfo.day;
+    const businessCurrentTime = currentTimeInfo.time;
+    
+    const todayHours = getServiceHoursForDay(serviceHours, businessCurrentDay);
+    if (!todayHours || typeof todayHours !== 'object' || Array.isArray(todayHours)) {
       return false;
     }
 
-    if (closeMinutes < openMinutes) {
-      return currentTimeMinutes >= openMinutes || currentTimeMinutes <= closeMinutes;
+    const currentTimeSeconds = timeToSeconds(businessCurrentTime);
+    const openSeconds = timeToSeconds(todayHours.open);
+    const closeSeconds = timeToSeconds(todayHours.close);
+
+    if (currentTimeSeconds === null || typeof currentTimeSeconds !== 'number' || 
+        isNaN(currentTimeSeconds) || currentTimeSeconds < 0 || currentTimeSeconds >= 86400) {
+      return false;
+    }
+    
+    if (openSeconds === null || typeof openSeconds !== 'number' || 
+        isNaN(openSeconds) || openSeconds < 0 || openSeconds >= 86400) {
+      return false;
+    }
+    
+    if (closeSeconds === null || typeof closeSeconds !== 'number' || 
+        isNaN(closeSeconds) || closeSeconds < 0 || closeSeconds >= 86400) {
+      return false;
     }
 
-    return currentTimeMinutes >= openMinutes && currentTimeMinutes <= closeMinutes;
+    if (closeSeconds < openSeconds) {
+      return currentTimeSeconds >= openSeconds || currentTimeSeconds < closeSeconds;
+    }
+
+    return currentTimeSeconds >= openSeconds && currentTimeSeconds < closeSeconds;
   });
 }
 
 function checkIfCurrentlyOpen(builderPage) {
-  if (!builderPage || typeof builderPage !== 'object') {
+  if (!builderPage || typeof builderPage !== 'object' || Array.isArray(builderPage)) {
     return false;
   }
   
-  if (!builderPage.serviceHours || typeof builderPage.serviceHours !== 'object') {
+  if (!builderPage.serviceHours || typeof builderPage.serviceHours !== 'object' ||
+      Array.isArray(builderPage.serviceHours)) {
     return false;
   }
   
@@ -1666,7 +1780,6 @@ async function hasCompleteProfileWithDetails(business) {
 
     return { isComplete: true };
   } catch (error) {
-    console.error(`[hasCompleteProfile] Error checking profile for business ${business._id}:`, error);
     return { isComplete: false, reason: 'error' };
   }
 }

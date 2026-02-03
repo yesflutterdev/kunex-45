@@ -277,15 +277,6 @@ favoriteSchema.statics.getUserFavoritesByType = async function (userId, options 
               widgetName: widget.name,
               widgetType: widget.type
             };
-          } else {
-            favorite.widgetData = {
-              _id: widget._id,
-              name: widget.name,
-              type: widget.type,
-              settings: widget.settings,
-              layout: widget.layout,
-              status: widget.status
-            };
           }
         } else {
           favorite.widgetData = {
@@ -426,18 +417,6 @@ favoriteSchema.statics.getFavoritesGroupedByType = async function (userId, optio
               widgetId: widget._id,
               widgetName: widget.name,
               widgetType: widget.type,
-              pageId: widget.pageId,
-              pageLogo: userPage?.logo || null,
-              businessId: userPage?.businessId || null
-            };
-          } else {
-            contentData = {
-              _id: widget._id,
-              name: widget.name,
-              type: widget.type,
-              settings: widget.settings,
-              layout: widget.layout,
-              status: widget.status,
               pageId: widget.pageId,
               pageLogo: userPage?.logo || null,
               businessId: userPage?.businessId || null

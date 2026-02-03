@@ -1216,7 +1216,10 @@ exports.updateWeeklyHours = async (req, res, next) => {
       };
     }
 
-    if (timezone) page.serviceHours.timezone = timezone;
+    if (timezone) {
+      const { validateTimezone } = require('../utils/timezoneValidation');
+      page.serviceHours.timezone = validateTimezone(timezone, 'UTC');
+    }
     if (notes) page.serviceHours.notes = notes;
 
     await page.save();

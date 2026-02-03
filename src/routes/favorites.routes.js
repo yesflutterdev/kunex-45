@@ -55,9 +55,84 @@ const auth = require('../middleware/auth.mw');
  *             isPublished:
  *               type: boolean
  *               example: true
+ *         productData:
+ *           type: object
+ *           description: Product details (for Product type)
+ *           properties:
+ *             _id:
+ *               type: string
+ *               example: "60d5ecb74b24a1234567890c"
+ *             productName:
+ *               type: string
+ *               example: "Product Name"
+ *             productImage:
+ *               type: string
+ *               example: "https://example.com/product.jpg"
+ *             price:
+ *               type: string
+ *               example: "29.99"
+ *             currency:
+ *               type: string
+ *               example: "USD"
+ *             productUrl:
+ *               type: string
+ *               example: "https://example.com/product"
+ *             widgetId:
+ *               type: string
+ *             widgetName:
+ *               type: string
+ *             widgetType:
+ *               type: string
+ *         eventData:
+ *           type: object
+ *           description: Event details (for Event type) - Only event-specific fields, no widget settings
+ *           properties:
+ *             _id:
+ *               type: string
+ *               example: "60d5ecb74b24a1234567890c"
+ *             title:
+ *               type: string
+ *               example: "Summer Music Festival"
+ *             eventImage:
+ *               type: string
+ *               example: "https://example.com/event.jpg"
+ *             date:
+ *               type: string
+ *               example: "15 Jul 2025"
+ *             location:
+ *               type: string
+ *               example: "Central Park, New York"
+ *             ticketUrl:
+ *               type: string
+ *               example: "https://example.com/tickets"
+ *             enddate:
+ *               type: string
+ *               example: "17 Jul 2025"
+ *             category:
+ *               type: string
+ *               example: "Music"
+ *             widgetId:
+ *               type: string
+ *               description: Widget ID containing this event
+ *             widgetName:
+ *               type: string
+ *               description: Widget name
+ *             widgetType:
+ *               type: string
+ *               description: Widget type (always "event")
+ *             pageId:
+ *               type: string
+ *               description: BuilderPage ID
+ *             pageLogo:
+ *               type: string
+ *               nullable: true
+ *               description: Page logo URL
+ *             businessId:
+ *               type: string
+ *               description: BusinessProfile ID
  *         widgetData:
  *           type: object
- *           description: Widget details (for Product/Promotion/Event types)
+ *           description: Widget details (for Promotion type or fallback)
  *           properties:
  *             _id:
  *               type: string
@@ -180,6 +255,11 @@ const auth = require('../middleware/auth.mw');
  *           pattern: '^[0-9a-fA-F]{24}$'
  *           description: Product ID (required only when type is 'Product')
  *           example: "66faaa111111111111111111"
+ *         eventId:
+ *           type: string
+ *           pattern: '^[0-9a-fA-F]{24}$'
+ *           description: Event ID (required only when type is 'Event')
+ *           example: "66faaa111111111111111112"
  *         folderId:
  *           type: string
  *           pattern: '^[0-9a-fA-F]{24}$'
@@ -264,7 +344,7 @@ const auth = require('../middleware/auth.mw');
  *               type: array
  *               items:
  *                 $ref: '#/components/schemas/Favorite'
- *               description: Array of favorited events
+ *               description: Array of favorited events. Each event contains only event-specific data (title, eventImage, date, location, ticketUrl, enddate, category) in the content.eventData field. Widget settings, googleMaps, forms, and googleReviews are not included.
  *             totalCount:
  *               type: number
  *               example: 25
@@ -290,7 +370,7 @@ const auth = require('../middleware/auth.mw');
  * /api/favorites:
  *   post:
  *     summary: Toggle widget favorites (add/remove)
- *     description: Add a widget to user's favorites or remove it if already favorited (toggle behavior). For Product type, productId is required. For other types (Page, Promotion, Event), productId is not needed.
+ *     description: Add a widget to user's favorites or remove it if already favorited (toggle behavior). For Product type, productId is required. For Event type, eventId is required. For other types (Page, Promotion), productId/eventId are not needed.
  *     tags: [Favorites]
  *     security:
  *       - bearerAuth: []

@@ -406,7 +406,7 @@ exports.getProfile = async (req, res, next) => {
 
     const profile = await BusinessProfile.findOne({ userId })
       .populate('userId', 'email firstName lastName')
-      .populate('builderPageId', 'serviceHours');
+      .populate('builderPageId', 'serviceHours analytics');
 
     if (!profile) {
       return res.status(404).json({
@@ -436,10 +436,52 @@ exports.getProfile = async (req, res, next) => {
       }
     }
 
+    let ctr = 0;
+    let totalViewCount = profile.metrics?.viewCount || 0;
+    let totalFavoriteCount = profile.metrics?.favoriteCount || 0;
+
+    if (profile.builderPageId && typeof profile.builderPageId === 'object') {
+      const builderPageId = profile.builderPageId._id || profile.builderPageId;
+      
+      const builderPage = await BuilderPage.findById(builderPageId)
+        .select('analytics')
+        .lean();
+
+      if (builderPage && builderPage.analytics) {
+        const pageViews = builderPage.analytics.pageViews || 0;
+        const pageFavoriteCount = builderPage.analytics.favoriteCount || 0;
+
+        totalViewCount = Math.max(totalViewCount, pageViews);
+        totalFavoriteCount = Math.max(totalFavoriteCount, pageFavoriteCount);
+
+        if (pageViews > 0) {
+          const ClickTracking = require('../models/clickTracking.model');
+          const clickCount = await ClickTracking.countDocuments({
+            targetId: builderPageId,
+            targetType: 'builderPage'
+          });
+
+          ctr = ((clickCount / pageViews) * 100).toFixed(2);
+          ctr = parseFloat(ctr);
+        }
+      }
+    }
+
+    const metrics = {
+      viewCount: totalViewCount,
+      favoriteCount: totalFavoriteCount,
+      ratingAverage: profile.metrics?.ratingAverage || 0,
+      ratingCount: profile.metrics?.ratingCount || 0,
+      ctr: ctr
+    };
+
+    const profileData = profile.toObject();
+    profileData.metrics = metrics;
+
     res.status(200).json({
       success: true,
       data: {
-        profile,
+        profile: profileData,
         completionPercentage,
         todayHours,
         isCurrentlyOpen
@@ -1204,49 +1246,58 @@ exports.searchProfiles = async (req, res, next) => {
       .lean();
 
     if (openedStatus === 'open' && profiles.length > 0) {
-      const now = new Date();
-      const currentDay = now.toLocaleDateString('en-US', { weekday: 'long' });
-      if (!currentDay || typeof currentDay !== 'string') {
-        profiles = [];
-      } else {
-        const currentTime = now.toTimeString().slice(0, 5);
-        if (!currentTime || typeof currentTime !== 'string') {
-          profiles = [];
-        } else {
-          const currentTimeMinutes = timeToMinutes(currentTime);
-          if (currentTimeMinutes === null || typeof currentTimeMinutes !== 'number' || isNaN(currentTimeMinutes)) {
-            profiles = [];
-          } else {
-            profiles = profiles.filter(profile => {
-              if (!profile || typeof profile !== 'object') {
-                return false;
-              }
-              if (!profile.builderPageId || typeof profile.builderPageId !== 'object') {
-                return false;
-              }
-              if (!profile.builderPageId.serviceHours || typeof profile.builderPageId.serviceHours !== 'object') {
-                return false;
-              }
-              const todayHours = getServiceHoursForDay(profile.builderPageId.serviceHours, currentDay);
-              if (!todayHours || typeof todayHours !== 'object') {
-                return false;
-              }
-              const openMinutes = timeToMinutes(todayHours.open);
-              const closeMinutes = timeToMinutes(todayHours.close);
-              if (openMinutes === null || typeof openMinutes !== 'number' || isNaN(openMinutes)) {
-                return false;
-              }
-              if (closeMinutes === null || typeof closeMinutes !== 'number' || isNaN(closeMinutes)) {
-                return false;
-              }
-              if (closeMinutes < openMinutes) {
-                return currentTimeMinutes >= openMinutes || currentTimeMinutes <= closeMinutes;
-              }
-              return currentTimeMinutes >= openMinutes && currentTimeMinutes <= closeMinutes;
-            });
-          }
+      profiles = profiles.filter(profile => {
+        if (!profile || typeof profile !== 'object') {
+          return false;
         }
-      }
+        
+        if (!profile.builderPageId || typeof profile.builderPageId !== 'object') {
+          return false;
+        }
+        
+        if (!profile.builderPageId.serviceHours || typeof profile.builderPageId.serviceHours !== 'object') {
+          return false;
+        }
+        
+        const serviceHours = profile.builderPageId.serviceHours;
+        const { validateTimezone } = require('../utils/timezoneValidation');
+        const timezone = validateTimezone(serviceHours.timezone, 'UTC');
+        const currentTimeInfo = getCurrentTimeInTimezone(timezone);
+        
+        if (!currentTimeInfo || !currentTimeInfo.time || !currentTimeInfo.day) {
+          return false;
+        }
+        
+        const businessCurrentDay = currentTimeInfo.day;
+        const businessCurrentTime = currentTimeInfo.time;
+        
+        const todayHours = getServiceHoursForDay(serviceHours, businessCurrentDay);
+        if (!todayHours || typeof todayHours !== 'object') {
+          return false;
+        }
+        
+        const currentTimeSeconds = timeToSeconds(businessCurrentTime);
+        const openSeconds = timeToSeconds(todayHours.open);
+        const closeSeconds = timeToSeconds(todayHours.close);
+        
+        if (currentTimeSeconds === null || typeof currentTimeSeconds !== 'number' || isNaN(currentTimeSeconds)) {
+          return false;
+        }
+        
+        if (openSeconds === null || typeof openSeconds !== 'number' || isNaN(openSeconds)) {
+          return false;
+        }
+        
+        if (closeSeconds === null || typeof closeSeconds !== 'number' || isNaN(closeSeconds)) {
+          return false;
+        }
+        
+        if (closeSeconds < openSeconds) {
+          return currentTimeSeconds >= openSeconds || currentTimeSeconds < closeSeconds;
+        }
+        
+        return currentTimeSeconds >= openSeconds && currentTimeSeconds < closeSeconds;
+      });
     }
 
     const totalCount = await BusinessProfile.countDocuments(query);
@@ -1335,22 +1386,6 @@ exports.findNearbyProfiles = async (req, res, next) => {
       .lean();
 
     if (openedStatus === 'open' && profiles.length > 0) {
-      const now = new Date();
-      const currentDay = now.toLocaleDateString('en-US', { weekday: 'long' });
-      if (!currentDay || typeof currentDay !== 'string') {
-        return profiles;
-      }
-      
-      const currentTime = now.toTimeString().slice(0, 5);
-      if (!currentTime || typeof currentTime !== 'string') {
-        return profiles;
-      }
-      
-      const currentTimeMinutes = timeToMinutes(currentTime);
-      if (currentTimeMinutes === null || typeof currentTimeMinutes !== 'number' || isNaN(currentTimeMinutes)) {
-        return profiles;
-      }
-      
       profiles = profiles.filter(profile => {
         if (!profile || typeof profile !== 'object') {
           return false;
@@ -1364,27 +1399,44 @@ exports.findNearbyProfiles = async (req, res, next) => {
           return false;
         }
         
-        const todayHours = getServiceHoursForDay(profile.builderPageId.serviceHours, currentDay);
+        const serviceHours = profile.builderPageId.serviceHours;
+        const { validateTimezone } = require('../utils/timezoneValidation');
+        const timezone = validateTimezone(serviceHours.timezone, 'UTC');
+        const currentTimeInfo = getCurrentTimeInTimezone(timezone);
+        
+        if (!currentTimeInfo || !currentTimeInfo.time || !currentTimeInfo.day) {
+          return false;
+        }
+        
+        const businessCurrentDay = currentTimeInfo.day;
+        const businessCurrentTime = currentTimeInfo.time;
+        
+        const todayHours = getServiceHoursForDay(serviceHours, businessCurrentDay);
         if (!todayHours || typeof todayHours !== 'object') {
           return false;
         }
         
-        const openMinutes = timeToMinutes(todayHours.open);
-        const closeMinutes = timeToMinutes(todayHours.close);
+        const currentTimeSeconds = timeToSeconds(businessCurrentTime);
+        const openSeconds = timeToSeconds(todayHours.open);
+        const closeSeconds = timeToSeconds(todayHours.close);
         
-        if (openMinutes === null || typeof openMinutes !== 'number' || isNaN(openMinutes)) {
+        if (currentTimeSeconds === null || typeof currentTimeSeconds !== 'number' || isNaN(currentTimeSeconds)) {
           return false;
         }
         
-        if (closeMinutes === null || typeof closeMinutes !== 'number' || isNaN(closeMinutes)) {
+        if (openSeconds === null || typeof openSeconds !== 'number' || isNaN(openSeconds)) {
           return false;
         }
         
-        if (closeMinutes < openMinutes) {
-          return currentTimeMinutes >= openMinutes || currentTimeMinutes <= closeMinutes;
+        if (closeSeconds === null || typeof closeSeconds !== 'number' || isNaN(closeSeconds)) {
+          return false;
         }
         
-        return currentTimeMinutes >= openMinutes && currentTimeMinutes <= closeMinutes;
+        if (closeSeconds < openSeconds) {
+          return currentTimeSeconds >= openSeconds || currentTimeSeconds < closeSeconds;
+        }
+        
+        return currentTimeSeconds >= openSeconds && currentTimeSeconds < closeSeconds;
       });
     }
 
@@ -1466,12 +1518,29 @@ exports.updateBusinessHours = async (req, res, next) => {
       });
     }
 
-    const { weeklyHours } = req.body;
+    const { weeklyHours, timezone } = req.body;
     if (!weeklyHours || !Array.isArray(weeklyHours)) {
       return res.status(400).json({
         success: false,
         message: 'weeklyHours array is required',
       });
+    }
+
+    const validDays = ['Mon', 'Tues', 'Wed', 'Thur', 'Fri', 'Sat', 'Sun'];
+    for (const dayHours of weeklyHours) {
+      if (!validDays.includes(dayHours.day)) {
+        return res.status(400).json({
+          success: false,
+          message: `Invalid day: ${dayHours.day}. Must be one of: ${validDays.join(', ')}`,
+        });
+      }
+
+      if (!dayHours.isClosed && (!dayHours.startTime || !dayHours.endTime)) {
+        return res.status(400).json({
+          success: false,
+          message: `Start time and end time are required for ${dayHours.day} when not closed`,
+        });
+      }
     }
 
     builderPage.serviceHours.weeklyHours = weeklyHours;
@@ -1480,6 +1549,12 @@ exports.updateBusinessHours = async (req, res, next) => {
     } else {
       builderPage.serviceHours.type = 'both';
     }
+
+    if (timezone) {
+      const { validateTimezone } = require('../utils/timezoneValidation');
+      builderPage.serviceHours.timezone = validateTimezone(timezone, builderPage.serviceHours.timezone || 'UTC');
+    }
+
     await builderPage.save();
 
     let todayHours = null;
