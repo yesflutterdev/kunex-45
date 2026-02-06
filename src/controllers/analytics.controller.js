@@ -2103,25 +2103,14 @@ exports.getTopPerformingLinks = async (req, res) => {
     
     // Parse date range
     const { startDate, endDate } = parseDateRange(dateRange);
-    
-    console.log('=== TOP PERFORMING LINKS DEBUG ===');
-    console.log('Owner ID:', targetOwnerId);
-    console.log('Date Range:', dateRange);
-    console.log('Parsed dates:', { startDate, endDate });
-    console.log('Limit:', limit);
-    console.log('User ID:', userId);
-    console.log('===============================');
-    
-    // Get top performing custom links for this user
-    const topLinks = await ClickTracking.aggregate([
+
+    // 1) Aggregate top links (keep _id = targetId for widget lookup)
+    const topLinksRaw = await ClickTracking.aggregate([
       {
         $match: {
           targetOwnerId: new mongoose.Types.ObjectId(targetOwnerId),
           targetType: 'customLink',
-          timestamp: {
-            $gte: startDate,
-            $lte: endDate
-          }
+          timestamp: { $gte: startDate, $lte: endDate }
         }
       },
       {
@@ -2134,23 +2123,63 @@ exports.getTopPerformingLinks = async (req, res) => {
           uniqueClicks: { $addToSet: '$userId' }
         }
       },
-      {
-        $project: {
-          targetUrl: 1,
-          targetTitle: 1,
-          targetThumbnail: 1,
-          clicks: 1,
-          uniqueClicks: { $size: '$uniqueClicks' },
-          _id: 0
-        }
-      },
       { $sort: { clicks: -1 } },
       { $limit: parseInt(limit) }
     ]);
-    
-    console.log('Top Links Found:', topLinks.length);
-    console.log('Sample Top Links:', topLinks.slice(0, 2));
-    
+
+    const widgetIdsRaw = topLinksRaw.map((r) => r._id).filter(Boolean);
+    const widgetIds = widgetIdsRaw.map((id) =>
+      id instanceof mongoose.Types.ObjectId ? id : new mongoose.Types.ObjectId(String(id))
+    );
+
+    const ownerObjectId = new mongoose.Types.ObjectId(targetOwnerId);
+    const widgetsById = new Map();
+    if (widgetIds.length > 0) {
+      const query = {
+        userId: ownerObjectId,
+        type: 'custom_link',
+        $or: [
+          { _id: { $in: widgetIds } },
+          { 'settings.specific.customLink._id': { $in: widgetIds } }
+        ]
+      };
+
+      const widgets = await Widget.find(query)
+        .select('_id userId pageId name type category settings.specific.customLink')
+        .lean();
+
+      for (const w of widgets) {
+        widgetsById.set(w._id.toString(), w);
+        const customLink = w.settings?.specific?.customLink;
+        const arr = Array.isArray(customLink) ? customLink : customLink ? [customLink] : [];
+        for (const link of arr) {
+          if (link && link._id) widgetsById.set(link._id.toString(), w);
+        }
+      }
+    }
+
+    const topLinks = topLinksRaw.map((r) => {
+      const tid = r._id ? r._id.toString() : null;
+      const widget = tid ? widgetsById.get(tid) : null;
+      const out = {
+        targetUrl: r.targetUrl,
+        targetTitle: r.targetTitle,
+        targetThumbnail: r.targetThumbnail,
+        clicks: r.clicks,
+        uniqueClicks: Array.isArray(r.uniqueClicks) ? r.uniqueClicks.length : r.uniqueClicks
+      };
+      if (widget) {
+        out._id = widget._id;
+        out.userId = widget.userId;
+        out.pageId = widget.pageId;
+        out.name = widget.name;
+        out.type = widget.type;
+        out.category = widget.category;
+        out.settings = widget.settings || { specific: { customLink: [] } };
+      }
+      return out;
+    });
+
     res.json({
       success: true,
       data: {
@@ -2186,25 +2215,16 @@ exports.getContentPerformance = async (req, res) => {
     
     // Parse date range
     const { startDate, endDate } = parseDateRange(dateRange);
-    
-    console.log('=== CONTENT PERFORMANCE DEBUG ===');
-    console.log('Target ID:', targetId);
-    console.log('Date Range:', dateRange);
-    console.log('Parsed dates:', { startDate, endDate });
-    console.log('===============================');
-    
+
     // Get correct target data (Builder Page or Custom Link)
     const targetData = await getCorrectTargetData(targetId);
     if (!targetData) {
-      console.log('ERROR: Target not found for targetId:', targetId);
-      return res.status(404).json({ 
-        success: false, 
-        message: "Content not found" 
+      return res.status(404).json({
+        success: false,
+        message: "Content not found"
       });
     }
-    
-    console.log('Target Data:', targetData);
-    
+
     // Get performance data for this specific target
     const performance = await ClickTracking.aggregate([
       {
@@ -2232,9 +2252,7 @@ exports.getContentPerformance = async (req, res) => {
         }
       }
     ]);
-    
-    console.log('Performance Data:', performance);
-    
+
     const result = performance[0] || { clicks: 0, uniqueClicks: 0 };
     
     res.json({

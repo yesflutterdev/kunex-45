@@ -125,6 +125,48 @@ favoriteSchema.index({
   tags: 'text'
 });
 
+function slimEventItem (e) {
+  if (!e || typeof e !== 'object') return null;
+  return {
+    _id: e._id ?? null,
+    eventImage: e.eventImage ?? null,
+    title: e.title ?? null,
+    date: e.date ?? null,
+    location: e.location ?? null,
+    ticketUrl: e.ticketUrl ?? null,
+    enddate: e.enddate ?? null,
+    category: e.category ?? null
+  };
+}
+
+function slimEventList (raw) {
+  if (Array.isArray(raw)) return raw.map(slimEventItem).filter(Boolean);
+  if (raw != null && typeof raw === 'object') return [slimEventItem(raw)].filter(Boolean);
+  return [];
+}
+
+function buildSlimEventContent (widget, userId) {
+  const specific = widget.settings?.specific || {};
+  return {
+    _id: widget._id,
+    userId: userId,
+    pageId: widget.pageId ?? null,
+    name: widget.name ?? '',
+    type: 'event',
+    settings: {
+      specific: {
+        customLink: specific.customLink ?? null,
+        media: specific.media ?? {},
+        googleReviews: specific.googleReviews ?? {},
+        form: specific.form ?? {},
+        promotions: specific.promotions ?? {},
+        products: specific.products ?? null,
+        event: slimEventList(specific.event)
+      }
+    }
+  };
+}
+
 favoriteSchema.statics.getUserFavoritesByType = async function (userId, options = {}) {
   const {
     folderId,
@@ -401,27 +443,8 @@ favoriteSchema.statics.getFavoritesGroupedByType = async function (userId, optio
               businessId: userPage?.businessId || null
             };
           }
-        } else if (favorite.type === 'Event' && favorite.eventId) {
-          const events = widget.settings?.specific?.event || [];
-          const specificEvent = events.find(e => e._id?.toString() === favorite.eventId);
-          if (specificEvent) {
-            contentData = {
-              _id: favorite.eventId,
-              title: specificEvent.title,
-              eventImage: specificEvent.eventImage,
-              date: specificEvent.date,
-              location: specificEvent.location,
-              ticketUrl: specificEvent.ticketUrl,
-              enddate: specificEvent.enddate,
-              category: specificEvent.category,
-              widgetId: widget._id,
-              widgetName: widget.name,
-              widgetType: widget.type,
-              pageId: widget.pageId,
-              pageLogo: userPage?.logo || null,
-              businessId: userPage?.businessId || null
-            };
-          }
+        } else if (favorite.type === 'Event') {
+          contentData = buildSlimEventContent(widget, favorite.userId);
         } else {
           contentData = {
             _id: widget._id,
@@ -439,25 +462,27 @@ favoriteSchema.statics.getFavoritesGroupedByType = async function (userId, optio
     }
 
     if (contentData) {
-      const favoriteData = {
-        _id: favorite._id,
-        widgetId: favorite.widgetId,
-        content: contentData,
-        folderId: favorite.folderId,
-        folder: favorite.folderId,
-        notes: favorite.notes,
-        tags: favorite.tags,
-        rating: favorite.rating,
-        visitCount: favorite.visitCount,
-        lastVisited: favorite.lastVisited,
-        isPrivate: favorite.isPrivate,
-        metadata: favorite.metadata,
-        analytics: favorite.analytics,
-        createdAt: favorite.createdAt,
-        updatedAt: favorite.updatedAt
-      };
-
       const typeKey = favorite.type.toLowerCase() + 's';
+      const isEvent = typeKey === 'events';
+      const favoriteData = isEvent
+        ? { _id: favorite._id, widgetId: favorite.widgetId, content: contentData }
+        : {
+            _id: favorite._id,
+            widgetId: favorite.widgetId,
+            content: contentData,
+            folderId: favorite.folderId,
+            folder: favorite.folderId,
+            notes: favorite.notes,
+            tags: favorite.tags,
+            rating: favorite.rating,
+            visitCount: favorite.visitCount,
+            lastVisited: favorite.lastVisited,
+            isPrivate: favorite.isPrivate,
+            metadata: favorite.metadata,
+            analytics: favorite.analytics,
+            createdAt: favorite.createdAt,
+            updatedAt: favorite.updatedAt
+          };
       if (groupedFavorites.hasOwnProperty(typeKey)) {
         groupedFavorites[typeKey].push(favoriteData);
       }
