@@ -1155,10 +1155,10 @@ exports.moveBusinessPageBetweenFolders = async (req, res, next) => {
       });
     }
 
-    if (!fromFolderId || !toFolderId) {
+    if (!toFolderId) {
       return res.status(400).json({
         success: false,
-        message: 'Both fromFolderId and toFolderId are required in request body'
+        message: 'toFolderId is required in request body'
       });
     }
 
@@ -1170,7 +1170,7 @@ exports.moveBusinessPageBetweenFolders = async (req, res, next) => {
       });
     }
 
-    if (!mongoose.Types.ObjectId.isValid(fromFolderId)) {
+    if (fromFolderId && !mongoose.Types.ObjectId.isValid(fromFolderId)) {
       return res.status(400).json({
         success: false,
         message: 'Invalid fromFolderId format'
@@ -1184,44 +1184,139 @@ exports.moveBusinessPageBetweenFolders = async (req, res, next) => {
       });
     }
 
-    if (fromFolderId === toFolderId) {
+    if (fromFolderId && fromFolderId === toFolderId) {
       return res.status(400).json({
         success: false,
         message: 'Source and target folders cannot be the same'
       });
     }
 
-    // Verify both folders belong to user
-    const [fromFolder, toFolder] = await Promise.all([
-      Folder.findOne({ _id: fromFolderId, userId }),
-      Folder.findOne({ _id: toFolderId, userId })
-    ]);
+    const pageObjectId = new mongoose.Types.ObjectId(pageId);
+    const toFolderObjectId = new mongoose.Types.ObjectId(toFolderId);
 
-    if (!fromFolder) {
-      console.log(`[Move Page] Source folder not found: ${fromFolderId} for user: ${userId}`);
-      return res.status(404).json({
-        success: false,
-        message: 'Source folder not found or access denied'
-      });
-    }
-
+    // Verify target folder belongs to user
+    const toFolder = await Folder.findOne({ _id: toFolderId, userId });
     if (!toFolder) {
-      console.log(`[Move Page] Target folder not found: ${toFolderId} for user: ${userId}`);
       return res.status(404).json({
         success: false,
         message: 'Target folder not found or access denied'
       });
     }
 
-    // Convert pageId to ObjectId for query
-    const pageObjectId = new mongoose.Types.ObjectId(pageId);
+    // --- CASE 1: No fromFolderId — first time assignment to a folder ---
+    if (!fromFolderId) {
+      // Check if page already exists in target folder
+      const existingInTarget = await Favorite.findOne({
+        folderId: toFolderObjectId,
+        userId,
+        $or: [
+          { widgetId: pageObjectId },
+          { widgetId: pageId },
+          { productId: pageId }
+        ]
+      });
+
+      if (existingInTarget) {
+        return res.status(409).json({
+          success: false,
+          message: 'Page already exists in target folder'
+        });
+      }
+
+      // Check if page exists in any other folder — if so, it's a move (fromFolderId should have been provided)
+      const existingAnywhere = await Favorite.findOne({
+        userId,
+        $or: [
+          { widgetId: pageObjectId },
+          { widgetId: pageId },
+          { productId: pageId }
+        ]
+      });
+
+      if (existingAnywhere) {
+        // Auto-move from the existing folder
+        const oldFolderId = existingAnywhere.folderId;
+        existingAnywhere.folderId = toFolderObjectId;
+        await existingAnywhere.save();
+
+        // Update item counts for both folders
+        const [oldFolderCount, toFolderCount] = await Promise.all([
+          Favorite.countDocuments({ folderId: oldFolderId, userId }),
+          Favorite.countDocuments({ folderId: toFolderId, userId })
+        ]);
+
+        await Promise.all([
+          Folder.findByIdAndUpdate(oldFolderId, { itemCount: oldFolderCount }),
+          Folder.findByIdAndUpdate(toFolderId, { itemCount: toFolderCount })
+        ]);
+
+        const oldFolder = await Folder.findById(oldFolderId).select('name').lean();
+
+        return res.status(200).json({
+          success: true,
+          message: 'Business page moved successfully',
+          data: {
+            pageId,
+            fromFolder: {
+              _id: oldFolderId,
+              name: oldFolder ? oldFolder.name : 'Unknown',
+              itemCount: oldFolderCount
+            },
+            toFolder: {
+              _id: toFolder._id,
+              name: toFolder.name,
+              itemCount: toFolderCount
+            }
+          }
+        });
+      }
+
+      // Page is not in any folder — create new favorite
+      const favorite = new Favorite({
+        userId,
+        type: 'Page',
+        widgetId: pageId,
+        folderId: toFolderObjectId,
+        metadata: {
+          addedFrom: 'move_page',
+          deviceType: req.headers['user-agent']?.includes('Mobile') ? 'mobile' : 'desktop'
+        }
+      });
+
+      await favorite.save();
+
+      const toFolderCount = await Favorite.countDocuments({ folderId: toFolderId, userId });
+      await Folder.findByIdAndUpdate(toFolderId, { itemCount: toFolderCount });
+
+      return res.status(200).json({
+        success: true,
+        message: 'Business page added to folder successfully',
+        data: {
+          pageId,
+          fromFolder: null,
+          toFolder: {
+            _id: toFolder._id,
+            name: toFolder.name,
+            itemCount: toFolderCount
+          }
+        }
+      });
+    }
+
+    // --- CASE 2: fromFolderId provided — standard move between folders ---
     const fromFolderObjectId = new mongoose.Types.ObjectId(fromFolderId);
 
+    const fromFolder = await Folder.findOne({ _id: fromFolderId, userId });
+    if (!fromFolder) {
+      return res.status(404).json({
+        success: false,
+        message: 'Source folder not found or access denied'
+      });
+    }
+
     // Find the favorite in the source folder
-    // For Page type, widgetId could be BusinessProfile ID or BuilderPage ID
-    // First try direct match
-    let favorite = await Favorite.findOne({ 
-      folderId: fromFolderObjectId, 
+    let favorite = await Favorite.findOne({
+      folderId: fromFolderObjectId,
       userId,
       $or: [
         { widgetId: pageObjectId },
@@ -1230,32 +1325,25 @@ exports.moveBusinessPageBetweenFolders = async (req, res, next) => {
       ]
     });
 
-    // If not found, pageId might be a BuilderPage ID but favorite has BusinessProfile ID
-    // Or vice versa - try to find the related BusinessProfile/BuilderPage
+    // If not found, try matching via BuilderPage <-> BusinessProfile relationship
     if (!favorite) {
       const BuilderPage = require('../models/builderPage.model');
-      
-      // Check if pageId is a BuilderPage ID
+
       const builderPage = await BuilderPage.findById(pageId).select('businessId').lean();
       if (builderPage && builderPage.businessId) {
-        // Try finding favorite with BusinessProfile ID
-        const businessProfileId = builderPage.businessId;
         favorite = await Favorite.findOne({
           folderId: fromFolderObjectId,
           userId,
-          widgetId: businessProfileId,
+          widgetId: builderPage.businessId,
           type: 'Page'
         });
       } else {
-        // Check if pageId is a BusinessProfile ID and has a BuilderPage
         const businessProfile = await BusinessProfile.findById(pageId).select('builderPageId').lean();
         if (businessProfile && businessProfile.builderPageId) {
-          // Try finding favorite with BuilderPage ID
-          const builderPageId = businessProfile.builderPageId;
           favorite = await Favorite.findOne({
             folderId: fromFolderObjectId,
             userId,
-            widgetId: builderPageId,
+            widgetId: businessProfile.builderPageId,
             type: 'Page'
           });
         }
@@ -1263,9 +1351,6 @@ exports.moveBusinessPageBetweenFolders = async (req, res, next) => {
     }
 
     if (!favorite) {
-      console.log(`[Move Page] Favorite not found for pageId: ${pageId} in folder: ${fromFolderId}`);
-      
-      // Try to find if the page exists in any folder for debugging
       const anyFavorite = await Favorite.findOne({
         userId,
         $or: [
@@ -1275,7 +1360,6 @@ exports.moveBusinessPageBetweenFolders = async (req, res, next) => {
       });
 
       if (anyFavorite) {
-        console.log(`[Move Page] Page exists in different folder: ${anyFavorite.folderId}`);
         return res.status(404).json({
           success: false,
           message: `Page not found in source folder. Page exists in folder: ${anyFavorite.folderId}`
@@ -1289,11 +1373,8 @@ exports.moveBusinessPageBetweenFolders = async (req, res, next) => {
     }
 
     // Check if page already exists in target folder
-    const toFolderObjectId = new mongoose.Types.ObjectId(toFolderId);
-    
-    // Get the actual widgetId from the favorite to check for duplicates
     const actualWidgetId = favorite.widgetId;
-    
+
     let existingInTarget = await Favorite.findOne({
       folderId: toFolderObjectId,
       userId,
@@ -1302,7 +1383,6 @@ exports.moveBusinessPageBetweenFolders = async (req, res, next) => {
       _id: { $ne: favorite._id }
     });
 
-    // Also check with pageId in case there's a different favorite with same page
     if (!existingInTarget) {
       existingInTarget = await Favorite.findOne({
         folderId: toFolderObjectId,
@@ -1430,15 +1510,24 @@ exports.getFolderPages = async (req, res, next) => {
 
       // Try BusinessProfile first
       let businessProfiles = await BusinessProfile.find({ _id: { $in: pageIds } })
-        .select('businessName username description logo coverImages createdAt updatedAt')
+        .select('businessName username description logo coverImages industryId subIndustryId createdAt updatedAt')
         .lean();
 
       // If no business profiles found, try BuilderPage
       if (businessProfiles.length === 0) {
         const BuilderPage = require('../models/builderPage.model');
         const builderPages = await BuilderPage.find({ _id: { $in: pageIds } })
-          .select('title slug description pageType logo cover settings createdAt updatedAt')
+          .select('title slug description pageType logo cover settings businessId createdAt updatedAt')
           .lean();
+
+        // Look up industry info from linked BusinessProfiles
+        const bpIds = builderPages.map(p => p.businessId).filter(Boolean);
+        const linkedProfiles = bpIds.length > 0
+          ? await BusinessProfile.find({ _id: { $in: bpIds } })
+              .select('_id industryId subIndustryId')
+              .lean()
+          : [];
+        const profileMap = new Map(linkedProfiles.map(p => [p._id.toString(), p]));
 
         businessProfiles = builderPages.map(page => ({
           _id: page._id,
@@ -1447,23 +1536,44 @@ exports.getFolderPages = async (req, res, next) => {
           description: { short: page.description },
           logo: page.logo,
           coverImages: page.cover ? [page.cover] : [],
+          industryId: profileMap.get(page.businessId?.toString())?.industryId || null,
+          subIndustryId: profileMap.get(page.businessId?.toString())?.subIndustryId || null,
           createdAt: page.createdAt,
           updatedAt: page.updatedAt
         }));
       }
 
-      businessPages = businessProfiles.map(profile => ({
-        _id: profile._id,
-        title: profile.businessName,
-        slug: profile.username,
-        description: profile.description?.short || profile.description?.full,
-        pageType: "business",
-        logo: profile.logo,
-        cover: profile.coverImages?.[0] || null,
-        isPublished: true,
-        createdAt: profile.createdAt,
-        updatedAt: profile.updatedAt
-      }));
+      // Batch resolve industry info for all profiles
+      const Industry = require('../models/industry.model');
+      const industryIds = [...new Set(businessProfiles.map(p => p.industryId?.toString()).filter(Boolean))];
+      const industries = industryIds.length > 0
+        ? await Industry.find({ _id: { $in: industryIds } }).select('title subcategories').lean()
+        : [];
+      const industryMap = new Map(industries.map(i => [i._id.toString(), i]));
+
+      businessPages = businessProfiles.map(profile => {
+        const industry = profile.industryId ? industryMap.get(profile.industryId.toString()) : null;
+        let subIndustryTitle = null;
+        if (industry && profile.subIndustryId && industry.subcategories) {
+          const sub = industry.subcategories.find(s => s.id === profile.subIndustryId);
+          if (sub) subIndustryTitle = sub.title;
+        }
+
+        return {
+          _id: profile._id,
+          title: profile.businessName,
+          slug: profile.username,
+          description: profile.description?.short || profile.description?.full,
+          pageType: "business",
+          logo: profile.logo,
+          cover: profile.coverImages?.[0] || null,
+          isPublished: true,
+          industry: industry ? industry.title : null,
+          subIndustry: subIndustryTitle,
+          createdAt: profile.createdAt,
+          updatedAt: profile.updatedAt
+        };
+      });
     }
 
     // Process Product favorites
@@ -1617,31 +1727,46 @@ exports.getFoldersGroupedByIndustry = async (req, res, next) => {
         const businessProfiles = await BusinessProfile.find({
           _id: { $in: businessProfileIds }
         })
-          .select('_id businessName username logo coverImage industry priceRange location.address location.city location.state location.country completionPercentage builderPageId metrics.favoriteCount createdAt updatedAt')
+          .select('_id businessName username logo coverImage industryId subIndustryId priceRange location.address location.city location.state location.country completionPercentage builderPageId metrics.favoriteCount createdAt updatedAt')
           .populate('userId', 'firstName lastName')
           .lean();
 
+        // Batch resolve industry info
+        const Industry = require('../models/industry.model');
+        const industryIds = [...new Set(businessProfiles.map(p => p.industryId?.toString()).filter(Boolean))];
+        const industryDocs = industryIds.length > 0
+          ? await Industry.find({ _id: { $in: industryIds } }).select('title subcategories').lean()
+          : [];
+        const industryMap = new Map(industryDocs.map(i => [i._id.toString(), i]));
+
         // Group business profiles by industry
         const industries = {};
-        
+
         businessProfiles.forEach((profile) => {
-          const industry = profile.industry || 'Uncategorized';
-          
-          if (!industries[industry]) {
-            industries[industry] = [];
+          const industryDoc = profile.industryId ? industryMap.get(profile.industryId.toString()) : null;
+          const industryTitle = industryDoc ? industryDoc.title : 'Uncategorized';
+          let subIndustryTitle = null;
+          if (industryDoc && profile.subIndustryId && industryDoc.subcategories) {
+            const sub = industryDoc.subcategories.find(s => s.id === profile.subIndustryId);
+            if (sub) subIndustryTitle = sub.title;
           }
-          
-          industries[industry].push({
+
+          if (!industries[industryTitle]) {
+            industries[industryTitle] = [];
+          }
+
+          industries[industryTitle].push({
             _id: profile._id,
-            businessId: profile._id.toString(), // BusinessProfile ID
-            pageId: profile.builderPageId ? profile.builderPageId.toString() : null, // BuilderPage ID
-            favoritesCount: profile.metrics?.favoriteCount || 0, // Favorites count
+            businessId: profile._id.toString(),
+            pageId: profile.builderPageId ? profile.builderPageId.toString() : null,
+            favoritesCount: profile.metrics?.favoriteCount || 0,
             userId: profile.userId,
             businessName: profile.businessName,
             username: profile.username,
             logo: profile.logo,
             coverImage: profile.coverImage,
-            industry: profile.industry,
+            industry: industryTitle,
+            subIndustry: subIndustryTitle,
             priceRange: profile.priceRange,
             location: {
               address: profile.location?.address || '',
@@ -1650,7 +1775,7 @@ exports.getFoldersGroupedByIndustry = async (req, res, next) => {
               country: profile.location?.country || ''
             },
             completionPercentage: profile.completionPercentage,
-            builderPageId: profile.builderPageId, // Keep for backward compatibility
+            builderPageId: profile.builderPageId,
             createdAt: profile.createdAt,
             updatedAt: profile.updatedAt
           });

@@ -562,6 +562,100 @@ router.put('/', authenticate, isVerified, businessProfileController.updateProfil
 
 /**
  * @swagger
+ * /api/profile/business/data:
+ *   patch:
+ *     summary: Update business data (name, location, phone, account type, description)
+ *     tags: [Business Profile]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               businessName:
+ *                 type: string
+ *                 maxLength: 100
+ *               location:
+ *                 type: object
+ *                 properties:
+ *                   isOnlineOnly:
+ *                     type: boolean
+ *                   address:
+ *                     type: string
+ *                     maxLength: 200
+ *                   city:
+ *                     type: string
+ *                     maxLength: 100
+ *                   state:
+ *                     type: string
+ *                     maxLength: 100
+ *                   country:
+ *                     type: string
+ *                     maxLength: 100
+ *                   postalCode:
+ *                     type: string
+ *                     maxLength: 20
+ *                   coordinates:
+ *                     type: object
+ *                     properties:
+ *                       type:
+ *                         type: string
+ *                         enum: [Point]
+ *                       coordinates:
+ *                         type: array
+ *                         items:
+ *                           type: number
+ *                         minItems: 2
+ *                         maxItems: 2
+ *               contactInfo:
+ *                 type: object
+ *                 properties:
+ *                   phone:
+ *                     type: string
+ *                     maxLength: 20
+ *               businessType:
+ *                 type: string
+ *                 enum: [Small business, Medium sized business, Franchise, Corporation, Non profit organizations, Startup, Online business, Others]
+ *               professionType:
+ *                 type: string
+ *                 enum: [Freelancer, Contractor, Consultant, Self employed, Employer, Entrepreneur, Remote worker, Others]
+ *               description:
+ *                 type: object
+ *                 properties:
+ *                   short:
+ *                     type: string
+ *                     maxLength: 200
+ *                   full:
+ *                     type: string
+ *                     maxLength: 2000
+ *     responses:
+ *       200:
+ *         description: Business data updated successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 message:
+ *                   type: string
+ *                 data:
+ *                   type: object
+ *       400:
+ *         description: Validation error
+ *       404:
+ *         description: Business profile not found
+ *       401:
+ *         description: Unauthorized
+ */
+router.patch('/data', authenticate, isVerified, businessProfileController.updateBusinessData);
+
+/**
+ * @swagger
  * /api/profile/business:
  *   delete:
  *     summary: Delete business profile

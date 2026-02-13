@@ -788,10 +788,26 @@ const makePayment = async (req, res) => {
 const getPaymentHistory = async (req, res) => {
   try {
     const userId = req.user.id;
-    const { page = 1, limit = 10 } = req.query;
+    const { page = 1, limit = 10, status, paymentMethod, startDate, endDate } = req.query;
 
-    const paymentHistory = await PaymentHistory.getUserPaymentHistory(userId, page, limit);
-    const totalCount = await PaymentHistory.countDocuments({ userId });
+    const filters = {};
+    if (status) filters.status = status;
+    if (paymentMethod) filters.paymentMethod = paymentMethod;
+    if (startDate) filters.startDate = startDate;
+    if (endDate) filters.endDate = endDate;
+
+    const paymentHistory = await PaymentHistory.getUserPaymentHistory(userId, page, limit, filters);
+
+    // Build the same filter query for accurate count
+    const countQuery = { userId };
+    if (status) countQuery.paymentStatus = status;
+    if (paymentMethod) countQuery.paymentMethod = paymentMethod;
+    if (startDate || endDate) {
+      countQuery.createdAt = {};
+      if (startDate) countQuery.createdAt.$gte = new Date(startDate);
+      if (endDate) countQuery.createdAt.$lte = new Date(endDate);
+    }
+    const totalCount = await PaymentHistory.countDocuments(countQuery);
 
     // Structure payment history for better frontend consumption
     const structuredHistory = paymentHistory.map(payment => {

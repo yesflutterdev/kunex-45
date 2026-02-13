@@ -109,6 +109,17 @@ const accountDeletionSchema = Joi.object({
   reason: Joi.string().trim().max(500).allow('')
 });
 
+// Validation schema for account deactivation
+const accountDeactivationSchema = Joi.object({
+  password: Joi.string().required(),
+  reason: Joi.string().trim().max(500).allow('')
+});
+
+// Validation schema for account reactivation
+const accountReactivationSchema = Joi.object({
+  password: Joi.string().required()
+});
+
 // Main user settings validation schema
 const userSettingsSchema = Joi.object({
   preferences: preferencesSchema,
@@ -137,6 +148,14 @@ exports.validateBillingSettings = (data) => {
 
 exports.validateAccountDeletion = (data) => {
   return accountDeletionSchema.validate(data, { allowUnknown: false });
+};
+
+exports.validateAccountDeactivation = (data) => {
+  return accountDeactivationSchema.validate(data, { allowUnknown: false });
+};
+
+exports.validateAccountReactivation = (data) => {
+  return accountReactivationSchema.validate(data, { allowUnknown: false });
 };
 
 // Individual component validators

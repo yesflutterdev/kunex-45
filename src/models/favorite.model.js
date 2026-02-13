@@ -153,17 +153,7 @@ function buildSlimEventContent (widget, userId) {
     pageId: widget.pageId ?? null,
     name: widget.name ?? '',
     type: 'event',
-    settings: {
-      specific: {
-        customLink: specific.customLink ?? null,
-        media: specific.media ?? {},
-        googleReviews: specific.googleReviews ?? {},
-        form: specific.form ?? {},
-        promotions: specific.promotions ?? {},
-        products: specific.products ?? null,
-        event: slimEventList(specific.event)
-      }
-    }
+    events: slimEventList(specific.event)
   };
 }
 
@@ -235,6 +225,14 @@ favoriteSchema.statics.getUserFavoritesByType = async function (userId, options 
     if (favorite.type === 'Page') {
       let page = await mongoose.model('BuilderPage').findById(favorite.widgetId).lean();
       if (page) {
+        let industryInfo = { industry: null, subIndustry: null };
+        if (page.businessId) {
+          const bp = await mongoose.model('BusinessProfile').findById(page.businessId)
+            .select('industryId subIndustryId')
+            .lean();
+          industryInfo = await resolveIndustryInfo(bp);
+        }
+
         favorite.pageData = {
           _id: page._id,
           title: page.title,
@@ -245,13 +243,17 @@ favoriteSchema.statics.getUserFavoritesByType = async function (userId, options 
           cover: page.cover,
           isPublished: page.settings?.isPublished || false,
           priceRange: page.priceRange,
-          location: page.location
+          location: page.location,
+          industry: industryInfo.industry,
+          subIndustry: industryInfo.subIndustry
         };
       } else {
         const businessProfile = await mongoose.model('BusinessProfile').findById(favorite.widgetId)
-          .select('_id businessName username description logo coverImage industry priceRange location metrics.favoriteCount')
+          .select('_id businessName username description logo coverImage industryId subIndustryId priceRange location metrics.favoriteCount')
           .lean();
         if (businessProfile) {
+          const industryInfo = await resolveIndustryInfo(businessProfile);
+
           favorite.pageData = {
             _id: businessProfile._id,
             title: businessProfile.businessName,
@@ -263,7 +265,8 @@ favoriteSchema.statics.getUserFavoritesByType = async function (userId, options 
             isPublished: true,
             priceRange: businessProfile.priceRange,
             location: businessProfile.location,
-            industry: businessProfile.industry || null,
+            industry: industryInfo.industry,
+            subIndustry: industryInfo.subIndustry,
             favoriteCount: businessProfile.metrics?.favoriteCount || 0
           };
         }
@@ -337,6 +340,29 @@ favoriteSchema.statics.getUserFavoritesByType = async function (userId, options 
   return favorites;
 };
 
+async function resolveIndustryInfo(businessProfile) {
+  if (!businessProfile || !businessProfile.industryId) {
+    return { industry: null, subIndustry: null };
+  }
+
+  const industry = await mongoose.model('Industry')
+    .findById(businessProfile.industryId)
+    .select('title subcategories')
+    .lean();
+
+  if (!industry) {
+    return { industry: null, subIndustry: null };
+  }
+
+  let subIndustryTitle = null;
+  if (businessProfile.subIndustryId && industry.subcategories) {
+    const sub = industry.subcategories.find(s => s.id === businessProfile.subIndustryId);
+    if (sub) subIndustryTitle = sub.title;
+  }
+
+  return { industry: industry.title, subIndustry: subIndustryTitle };
+}
+
 favoriteSchema.statics.getFavoritesGroupedByType = async function (userId, options = {}) {
   const {
     folderId,
@@ -383,8 +409,19 @@ favoriteSchema.statics.getFavoritesGroupedByType = async function (userId, optio
     if (favorite.type === 'Page') {
       let page = await mongoose.model('BuilderPage').findById(favorite.widgetId).lean();
       if (page) {
+        // Look up BusinessProfile for industry info
+        let industryInfo = { industry: null, subIndustry: null };
+        if (page.businessId) {
+          const bp = await mongoose.model('BusinessProfile').findById(page.businessId)
+            .select('industryId subIndustryId')
+            .lean();
+          industryInfo = await resolveIndustryInfo(bp);
+        }
+
         contentData = {
           _id: page._id,
+          pageId: page._id,
+          businessId: page.businessId || null,
           title: page.title,
           slug: page.slug,
           description: page.description,
@@ -393,15 +430,25 @@ favoriteSchema.statics.getFavoritesGroupedByType = async function (userId, optio
           cover: page.cover,
           isPublished: page.settings?.isPublished || false,
           priceRange: page.priceRange,
-          location: page.location
+          location: page.location,
+          industry: industryInfo.industry,
+          subIndustry: industryInfo.subIndustry
         };
       } else {
         const businessProfile = await mongoose.model('BusinessProfile').findById(favorite.widgetId)
-          .select('_id businessName username description logo coverImage industry priceRange location metrics.favoriteCount')
+          .select('_id businessName username description logo coverImage industryId subIndustryId priceRange location metrics.favoriteCount')
           .lean();
         if (businessProfile) {
+          // Look up the BuilderPage associated with this BusinessProfile
+          const linkedPage = await mongoose.model('BuilderPage').findOne({ businessId: businessProfile._id })
+            .select('_id')
+            .lean();
+
+          const industryInfo = await resolveIndustryInfo(businessProfile);
+
           contentData = {
             _id: businessProfile._id,
+            pageId: linkedPage ? linkedPage._id : null,
             title: businessProfile.businessName,
             slug: businessProfile.username,
             description: businessProfile.description?.short || businessProfile.description?.full,
@@ -411,7 +458,8 @@ favoriteSchema.statics.getFavoritesGroupedByType = async function (userId, optio
             isPublished: true,
             priceRange: businessProfile.priceRange,
             location: businessProfile.location,
-            industry: businessProfile.industry || null,
+            industry: industryInfo.industry,
+            subIndustry: industryInfo.subIndustry,
             favoriteCount: businessProfile.metrics?.favoriteCount || 0
           };
         }

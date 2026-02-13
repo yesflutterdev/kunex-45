@@ -7,13 +7,15 @@ const Transaction = require('../models/transaction.model');
 const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
 const { sendPasswordChangeNotification } = require('../utils/email');
-const { 
-  validateAccountDetails, 
-  validatePasswordChange, 
-  validateUserSettings, 
-  validateBillingSettings, 
+const {
+  validateAccountDetails,
+  validatePasswordChange,
+  validateUserSettings,
+  validateBillingSettings,
   validateAccountDeletion,
-  sanitizeUserInput 
+  validateAccountDeactivation,
+  validateAccountReactivation,
+  sanitizeUserInput
 } = require('../utils/settingsValidation');
 
 // KON-47: Fetch/Update My Account details
@@ -741,4 +743,134 @@ exports.deleteAccount = async (req, res, next) => {
   } catch (error) {
     next(error);
   }
-}; 
+};
+
+// Deactivate account (temporary - user can reactivate)
+exports.deactivateAccount = async (req, res, next) => {
+  try {
+    const userId = req.user.id;
+
+    const { error, value } = validateAccountDeactivation(req.body);
+    if (error) {
+      return res.status(400).json({
+        success: false,
+        message: error.details[0].message
+      });
+    }
+
+    const { password, reason } = value;
+
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    const isPasswordValid = await user.comparePassword(password);
+    if (!isPasswordValid) {
+      return res.status(400).json({
+        success: false,
+        message: 'Incorrect password'
+      });
+    }
+
+    // Check if already deactivated
+    const settings = await UserSettings.findOne({ userId });
+    if (settings && !settings.accountStatus.isActive) {
+      return res.status(409).json({
+        success: false,
+        message: 'Account is already deactivated'
+      });
+    }
+
+    await UserSettings.findOneAndUpdate(
+      { userId },
+      {
+        $set: {
+          'accountStatus.isActive': false,
+          'accountStatus.suspendedAt': new Date(),
+          'accountStatus.suspensionReason': reason || 'User requested deactivation'
+        }
+      },
+      { upsert: true }
+    );
+
+    res.status(200).json({
+      success: true,
+      message: 'Account deactivated successfully. You can reactivate anytime by logging in.'
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// Reactivate account
+exports.reactivateAccount = async (req, res, next) => {
+  try {
+    const userId = req.user.id;
+
+    const { error, value } = validateAccountReactivation(req.body);
+    if (error) {
+      return res.status(400).json({
+        success: false,
+        message: error.details[0].message
+      });
+    }
+
+    const { password } = value;
+
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    const isPasswordValid = await user.comparePassword(password);
+    if (!isPasswordValid) {
+      return res.status(400).json({
+        success: false,
+        message: 'Incorrect password'
+      });
+    }
+
+    const settings = await UserSettings.findOne({ userId });
+
+    // Can't reactivate a deleted account
+    if (settings && settings.accountStatus.isDeleted) {
+      return res.status(403).json({
+        success: false,
+        message: 'This account has been permanently deleted and cannot be reactivated'
+      });
+    }
+
+    if (settings && settings.accountStatus.isActive) {
+      return res.status(409).json({
+        success: false,
+        message: 'Account is already active'
+      });
+    }
+
+    await UserSettings.findOneAndUpdate(
+      { userId },
+      {
+        $set: {
+          'accountStatus.isActive': true,
+          'accountStatus.suspendedAt': null,
+          'accountStatus.suspensionReason': null
+        }
+      },
+      { upsert: true }
+    );
+
+    res.status(200).json({
+      success: true,
+      message: 'Account reactivated successfully. Welcome back!'
+    });
+  } catch (error) {
+    next(error);
+  }
+};

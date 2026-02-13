@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const settingsController = require('../controllers/settings.controller');
-const { authenticate } = require('../middleware/auth.mw.js');
+const { authenticate, authenticateAllowDeactivated } = require('../middleware/auth.mw.js');
 
 /**
  * @swagger
@@ -709,9 +709,80 @@ router.get('/export-data', authenticate, settingsController.exportAccountData);
 
 /**
  * @swagger
+ * /api/settings/deactivate-account:
+ *   patch:
+ *     summary: Deactivate user account (temporary - can be reactivated)
+ *     tags: [Settings]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - password
+ *             properties:
+ *               password:
+ *                 type: string
+ *               reason:
+ *                 type: string
+ *                 maxLength: 500
+ *     responses:
+ *       200:
+ *         description: Account deactivated successfully
+ *       400:
+ *         description: Incorrect password
+ *       401:
+ *         description: Unauthorized
+ *       404:
+ *         description: User not found
+ *       409:
+ *         description: Account is already deactivated
+ */
+router.patch('/deactivate-account', authenticate, settingsController.deactivateAccount);
+
+/**
+ * @swagger
+ * /api/settings/reactivate-account:
+ *   patch:
+ *     summary: Reactivate a deactivated account
+ *     tags: [Settings]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - password
+ *             properties:
+ *               password:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Account reactivated successfully
+ *       400:
+ *         description: Incorrect password
+ *       401:
+ *         description: Unauthorized
+ *       403:
+ *         description: Account permanently deleted and cannot be reactivated
+ *       404:
+ *         description: User not found
+ *       409:
+ *         description: Account is already active
+ */
+router.patch('/reactivate-account', authenticateAllowDeactivated, settingsController.reactivateAccount);
+
+/**
+ * @swagger
  * /api/settings/delete-account:
  *   post:
- *     summary: Delete user account
+ *     summary: Delete user account (permanent)
  *     tags: [Settings]
  *     security:
  *       - bearerAuth: []

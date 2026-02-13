@@ -1117,6 +1117,30 @@ router.post('/make-payment', authenticate, makePayment);
  *         schema:
  *           type: integer
  *           default: 10
+ *       - in: query
+ *         name: status
+ *         schema:
+ *           type: string
+ *           enum: [pending, completed, failed, refunded]
+ *         description: Filter by payment status
+ *       - in: query
+ *         name: paymentMethod
+ *         schema:
+ *           type: string
+ *           enum: [stripe, paypal, bank_transfer]
+ *         description: Filter by payment method
+ *       - in: query
+ *         name: startDate
+ *         schema:
+ *           type: string
+ *           format: date
+ *         description: Filter payments from this date (YYYY-MM-DD)
+ *       - in: query
+ *         name: endDate
+ *         schema:
+ *           type: string
+ *           format: date
+ *         description: Filter payments until this date (YYYY-MM-DD)
  *     responses:
  *       200:
  *         description: Payment history retrieved successfully

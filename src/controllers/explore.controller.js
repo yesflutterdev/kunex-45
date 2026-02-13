@@ -989,6 +989,15 @@ exports.exploreBusinesses = async (req, res, next) => {
       completeProfile = false
     } = value;
     const query = {};
+    let geoApplied = false;
+
+    // Exclude businesses with default [0,0] coordinates (no real location)
+    query.$nor = [
+      {
+        'location.coordinates.coordinates.0': 0,
+        'location.coordinates.coordinates.1': 0
+      }
+    ];
 
     if (nearby && longitude && latitude) {
       const nearbyRadius = Math.min(maxDistance, 10000);
@@ -1001,6 +1010,7 @@ exports.exploreBusinesses = async (req, res, next) => {
           $maxDistance: nearbyRadius
         }
       };
+      geoApplied = true;
     } else if (longitude && latitude) {
       query['location.coordinates'] = {
         $near: {
@@ -1011,62 +1021,65 @@ exports.exploreBusinesses = async (req, res, next) => {
           $maxDistance: maxDistance
         }
       };
+      geoApplied = true;
     }
 
-    if (search) {
-      query.$text = { $search: search };
-    }
-
-    if (toprated) {
-      query['metrics.ratingAverage'] = { $gte: 4.0 };
-      query['metrics.ratingCount'] = { $gte: 10 };
-    }
-
-
-    // Apply filters - use industryId (ObjectId) matching
-    if (category) {
-      const industryIds = await getIndustryIdsFromCategory(category);
-      if (industryIds.length > 0) {
-        query.industryId = { $in: industryIds };
-      } else {
-        // Fallback to string matching if no Industry found (backward compatibility)
-      query.$or = [
-        { industry: new RegExp(category, 'i') },
-        { subIndustry: new RegExp(category, 'i') },
-          { industryTags: new RegExp(category, 'i') }
-      ];
+    // Build non-geo filters separately so they can be reused in fallback
+    const buildFilters = async (targetQuery) => {
+      if (search) {
+        targetQuery.$text = { $search: search };
       }
-    }
 
-    if (rating) {
-      query['metrics.ratingAverage'] = { $gte: rating };
-    }
-
-    if (priceRange) {
-      if (Array.isArray(priceRange)) {
-        query.priceRange = { $in: priceRange };
-      } else {
-        query.priceRange = priceRange;
+      if (toprated) {
+        targetQuery['metrics.ratingAverage'] = { $gte: 4.0 };
+        targetQuery['metrics.ratingCount'] = { $gte: 10 };
       }
-    }
 
-    if (businessType) {
-      query.businessType = businessType;
-    }
-
-    if (features) {
-      const featuresArray = Array.isArray(features) ? features : [features];
-      if (featuresArray.length > 0) {
-        if (featuresArray.length === 1) {
-          query.features = new RegExp(featuresArray[0], 'i');
+      if (category) {
+        const industryIds = await getIndustryIdsFromCategory(category);
+        if (industryIds.length > 0) {
+          targetQuery.industryId = { $in: industryIds };
         } else {
-          query.$or = query.$or || [];
-          featuresArray.forEach(f => {
-            query.$or.push({ features: new RegExp(f, 'i') });
-          });
+          targetQuery.$or = [
+            { industry: new RegExp(category, 'i') },
+            { subIndustry: new RegExp(category, 'i') },
+            { industryTags: new RegExp(category, 'i') }
+          ];
         }
       }
-    }
+
+      if (rating) {
+        targetQuery['metrics.ratingAverage'] = { $gte: rating };
+      }
+
+      if (priceRange) {
+        if (Array.isArray(priceRange)) {
+          targetQuery.priceRange = { $in: priceRange };
+        } else {
+          targetQuery.priceRange = priceRange;
+        }
+      }
+
+      if (businessType) {
+        targetQuery.businessType = businessType;
+      }
+
+      if (features) {
+        const featuresArray = Array.isArray(features) ? features : [features];
+        if (featuresArray.length > 0) {
+          if (featuresArray.length === 1) {
+            targetQuery.features = new RegExp(featuresArray[0], 'i');
+          } else {
+            targetQuery.$or = targetQuery.$or || [];
+            featuresArray.forEach(f => {
+              targetQuery.$or.push({ features: new RegExp(f, 'i') });
+            });
+          }
+        }
+      }
+    };
+
+    await buildFilters(query);
 
     const sort = {};
 
@@ -1116,6 +1129,24 @@ exports.exploreBusinesses = async (req, res, next) => {
         .sort(sort)
       .limit(fetchLimit)
       .lean();
+
+    // Fallback: if geo query returned 0 results, retry without geo filter
+    if (businesses.length === 0 && geoApplied) {
+      const fallbackQuery = {};
+      await buildFilters(fallbackQuery);
+
+      const fallbackSort = Object.keys(sort).length > 0
+        ? sort
+        : { 'metrics.ratingAverage': -1, 'metrics.viewCount': -1 };
+
+      businesses = await BusinessProfile.find(fallbackQuery)
+        .populate('userId', 'firstName lastName')
+        .populate('builderPageId', 'serviceHours')
+        .select('-__v')
+        .sort(fallbackSort)
+        .limit(fetchLimit)
+        .lean();
+    }
 
     if ((openedStatus === 'open' || opennow) && businesses.length > 0) {
       businesses = filterByOpenedStatus(businesses);

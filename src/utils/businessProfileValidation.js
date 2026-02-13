@@ -195,6 +195,73 @@ exports.validateUpdateBusinessProfile = (data) => {
   return schema.validate(data, { allowUnknown: false, stripUnknown: true });
 };
 
+// Validate business data update (specific fields only)
+exports.validateUpdateBusinessData = (data) => {
+  const schema = Joi.object({
+    businessName: Joi.string().trim().max(100),
+    location: Joi.object({
+      isOnlineOnly: Joi.boolean(),
+      address: Joi.string().trim().max(200).allow(''),
+      city: Joi.string().trim().max(100).allow(''),
+      state: Joi.string().trim().max(100).allow(''),
+      country: Joi.string().trim().max(100).allow(''),
+      postalCode: Joi.string().trim().max(20).allow(''),
+      coordinates: Joi.object({
+        type: Joi.string().valid('Point').default('Point'),
+        coordinates: Joi.array()
+          .items(Joi.number())
+          .length(2)
+          .custom((value, helpers) => {
+            const [longitude, latitude] = value;
+            if (longitude < -180 || longitude > 180) {
+              return helpers.error('coordinates.longitude');
+            }
+            if (latitude < -90 || latitude > 90) {
+              return helpers.error('coordinates.latitude');
+            }
+            return value;
+          })
+          .messages({
+            'coordinates.longitude': 'Longitude must be between -180 and 180',
+            'coordinates.latitude': 'Latitude must be between -90 and 90'
+          })
+      })
+    }),
+    contactInfo: Joi.object({
+      phone: Joi.string().trim().max(20).allow('')
+    }),
+    businessType: Joi.string()
+      .valid(
+        'Small business',
+        'Medium sized business',
+        'Franchise',
+        'Corporation',
+        'Non profit organizations',
+        'Startup',
+        'Online business',
+        'Others'
+      ),
+    professionType: Joi.string()
+      .valid(
+        'Freelancer',
+        'Contractor',
+        'Consultant',
+        'Self employed',
+        'Employer',
+        'Entrepreneur',
+        'Remote worker',
+        'Others'
+      )
+      .allow(''),
+    description: Joi.object({
+      short: Joi.string().trim().max(200).allow(''),
+      full: Joi.string().trim().max(2000).allow('')
+    })
+  });
+
+  return schema.validate(data, { allowUnknown: false, stripUnknown: true });
+};
+
 // Validate search business profiles
 exports.validateSearchBusinessProfiles = (data) => {
   const schema = Joi.object({

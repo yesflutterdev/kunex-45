@@ -1085,7 +1085,12 @@ router.delete('/:folderId/business-pages/:pageId', auth.authenticate, foldersCon
  * @swagger
  * /api/folders/move-page/{pageId}:
  *   put:
- *     summary: Move business page between folders
+ *     summary: Move or assign business page to a folder
+ *     description: |
+ *       Moves a page between folders or assigns it to a folder for the first time.
+ *       - If fromFolderId is provided: moves the page from source to target folder.
+ *       - If fromFolderId is omitted and page exists in another folder: auto-moves it.
+ *       - If fromFolderId is omitted and page is not in any folder: creates a new favorite in target folder.
  *     tags: [Folders]
  *     security:
  *       - bearerAuth: []
@@ -1103,20 +1108,21 @@ router.delete('/:folderId/business-pages/:pageId', auth.authenticate, foldersCon
  *           schema:
  *             type: object
  *             required:
- *               - fromFolderId
  *               - toFolderId
  *             properties:
  *               fromFolderId:
  *                 type: string
- *                 description: Source folder ID
+ *                 description: Source folder ID (optional — omit when adding page to a folder for the first time)
  *               toFolderId:
  *                 type: string
  *                 description: Target folder ID
  *     responses:
  *       200:
- *         description: Business page moved successfully
+ *         description: Business page moved or added successfully
  *       404:
  *         description: Folder or page not found
+ *       409:
+ *         description: Page already exists in target folder
  */
 router.put('/move-page/:pageId', auth.authenticate, foldersController.moveBusinessPageBetweenFolders);
 

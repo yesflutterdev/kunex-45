@@ -90,9 +90,25 @@ paymentHistorySchema.index({ paymentStatus: 1 });
 paymentHistorySchema.index({ stripePaymentIntentId: 1 });
 
 // Static methods
-paymentHistorySchema.statics.getUserPaymentHistory = function(userId, page = 1, limit = 10) {
+paymentHistorySchema.statics.getUserPaymentHistory = function(userId, page = 1, limit = 10, filters = {}) {
   const skip = (page - 1) * limit;
-  return this.find({ userId })
+  const query = { userId };
+
+  if (filters.status) {
+    query.paymentStatus = filters.status;
+  }
+
+  if (filters.paymentMethod) {
+    query.paymentMethod = filters.paymentMethod;
+  }
+
+  if (filters.startDate || filters.endDate) {
+    query.createdAt = {};
+    if (filters.startDate) query.createdAt.$gte = new Date(filters.startDate);
+    if (filters.endDate) query.createdAt.$lte = new Date(filters.endDate);
+  }
+
+  return this.find(query)
     .populate('subscriptionPlanId', 'name description type price features limits trialPeriodDays')
     .sort({ createdAt: -1 })
     .skip(skip)

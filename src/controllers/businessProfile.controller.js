@@ -7,6 +7,7 @@ const { incrementIndustryViewCount, validateIndustryAndSubcategory } = require('
 const {
   validateCreateBusinessProfile,
   validateUpdateBusinessProfile,
+  validateUpdateBusinessData,
   validateSearchBusinessProfiles,
   validateLocationSearch,
   validateImageUpload,
@@ -699,6 +700,109 @@ exports.updateProfile = async (req, res, next) => {
     res.status(200).json({
       success: true,
       message: 'Business profile updated successfully',
+      data: {
+        profile,
+        completionPercentage: profile.completionPercentage,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// Update business data (name, location, phone, account type, description)
+exports.updateBusinessData = async (req, res, next) => {
+  try {
+    const userId = req.user.id;
+
+    // Validate input data
+    const { error, value } = validateUpdateBusinessData(req.body);
+    if (error) {
+      return res.status(400).json({
+        success: false,
+        message: 'Validation error',
+        errors: error.details.map(detail => detail.message),
+      });
+    }
+
+    // Find profile
+    const profile = await BusinessProfile.findOne({ userId });
+    if (!profile) {
+      return res.status(404).json({
+        success: false,
+        message: 'Business profile not found',
+      });
+    }
+
+    // Apply updates to profile - only update fields that are sent
+    if (value.businessName !== undefined) {
+      profile.businessName = value.businessName;
+    }
+
+    if (value.location !== undefined) {
+      // Merge location fields, keeping existing values for unsent fields
+      if (!profile.location) profile.location = {};
+      if (value.location.isOnlineOnly !== undefined) profile.location.isOnlineOnly = value.location.isOnlineOnly;
+      if (value.location.address !== undefined) profile.location.address = value.location.address;
+      if (value.location.city !== undefined) profile.location.city = value.location.city;
+      if (value.location.state !== undefined) profile.location.state = value.location.state;
+      if (value.location.country !== undefined) profile.location.country = value.location.country;
+      if (value.location.postalCode !== undefined) profile.location.postalCode = value.location.postalCode;
+      if (value.location.coordinates !== undefined) {
+        if (!profile.location.coordinates) profile.location.coordinates = {};
+        profile.location.coordinates.type = 'Point';
+        profile.location.coordinates.coordinates = value.location.coordinates.coordinates;
+      }
+    }
+
+    if (value.contactInfo !== undefined) {
+      // Merge contactInfo, keeping existing values for unsent fields
+      if (!profile.contactInfo) profile.contactInfo = {};
+      if (value.contactInfo.phone !== undefined) profile.contactInfo.phone = value.contactInfo.phone;
+    }
+
+    if (value.businessType !== undefined) {
+      profile.businessType = value.businessType;
+    }
+
+    if (value.professionType !== undefined) {
+      profile.professionType = value.professionType;
+    }
+
+    if (value.description !== undefined) {
+      // Merge description, keeping existing values for unsent fields
+      if (!profile.description) profile.description = {};
+      if (value.description.short !== undefined) profile.description.short = value.description.short;
+      if (value.description.full !== undefined) profile.description.full = value.description.full;
+    }
+
+    await profile.save();
+
+    // Sync changes to BuilderPage
+    const builderPage = await BuilderPage.findOne({ businessId: profile._id });
+    if (builderPage) {
+      const syncData = {};
+
+      if (value.businessName !== undefined) {
+        syncData.title = profile.businessName;
+      }
+      if (value.location?.address !== undefined) {
+        syncData.location = profile.location.address;
+      }
+      if (value.description !== undefined) {
+        syncData.description = profile.description.short || profile.description.full;
+      }
+
+      Object.assign(builderPage, syncData);
+      await builderPage.save();
+    }
+
+    // Populate user data
+    await profile.populate('userId', 'email firstName lastName');
+
+    res.status(200).json({
+      success: true,
+      message: 'Business data updated successfully',
       data: {
         profile,
         completionPercentage: profile.completionPercentage,
