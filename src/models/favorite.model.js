@@ -145,15 +145,22 @@ function slimEventList (raw) {
   return [];
 }
 
-function buildSlimEventContent (widget, userId) {
+function buildSlimEventContent (widget, userId, eventId = null) {
   const specific = widget.settings?.specific || {};
+  let events = slimEventList(specific.event);
+
+  // If eventId is provided, filter to return only that specific event
+  if (eventId) {
+    events = events.filter(e => e._id?.toString() === eventId.toString());
+  }
+
   return {
     _id: widget._id,
     userId: userId,
     pageId: widget.pageId ?? null,
     name: widget.name ?? '',
     type: 'event',
-    events: slimEventList(specific.event)
+    events: events
   };
 }
 
@@ -492,7 +499,7 @@ favoriteSchema.statics.getFavoritesGroupedByType = async function (userId, optio
             };
           }
         } else if (favorite.type === 'Event') {
-          contentData = buildSlimEventContent(widget, favorite.userId);
+          contentData = buildSlimEventContent(widget, favorite.userId, favorite.eventId);
         } else {
           contentData = {
             _id: widget._id,
