@@ -494,6 +494,10 @@ const builderPageSchema = new mongoose.Schema(
           match: /^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$/,
           default: '#222220'
         },
+        isAutoColorInCta: {
+          type: Boolean,
+          default: false
+        },
         textColor: {
           type: String,
           match: /^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$/,
