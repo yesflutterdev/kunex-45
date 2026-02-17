@@ -697,9 +697,16 @@ exports.getFolderBusinessPages = async (req, res, next) => {
 
     for (const favorite of favorites) {
       // Properly convert folderId to string
-      const folderIdString = favorite.folderId 
-        ? (typeof favorite.folderId === 'string' ? favorite.folderId : favorite.folderId.toString())
-        : folderId; // Fallback to route param if not in favorite
+      let folderIdString = folderId; // Default to route param
+      if (favorite.folderId) {
+        if (typeof favorite.folderId === 'string') {
+          folderIdString = favorite.folderId;
+        } else if (favorite.folderId._id) {
+          folderIdString = favorite.folderId._id.toString();
+        } else {
+          folderIdString = favorite.folderId.toString();
+        }
+      }
       
       let itemData = {
         _id: favorite._id,
@@ -724,41 +731,71 @@ exports.getFolderBusinessPages = async (req, res, next) => {
         // Get businessId, pageId, and favoriteCount from BuilderPage or BusinessProfile
         const BuilderPage = require('../models/builderPage.model');
         const BusinessProfile = require('../models/businessProfile.model');
+        const Industry = require('../models/industry.model');
         let businessId = null;
         let pageId = null;
-        let favoriteCount = favorite.pageData.favoriteCount || 0; // From pageData if available
-        
+        let favoriteCount = favorite.pageData.favoriteCount || 0;
+        let industry = null;
+        let subIndustry = null;
+
         // Try BuilderPage first
         const page = await BuilderPage.findById(favorite.pageData._id).select('businessId _id').lean();
         if (page) {
-          pageId = page._id.toString(); // BuilderPage ID
+          pageId = page._id.toString();
           if (page.businessId) {
             businessId = page.businessId.toString();
-            // Get favoriteCount from BusinessProfile
             const business = await BusinessProfile.findById(page.businessId)
-              .select('metrics.favoriteCount').lean();
-            if (business?.metrics?.favoriteCount !== undefined) {
-              favoriteCount = business.metrics.favoriteCount;
+              .select('metrics.favoriteCount industryId subIndustryId industry subIndustry').lean();
+            if (business) {
+              if (business.metrics?.favoriteCount !== undefined) {
+                favoriteCount = business.metrics.favoriteCount;
+              }
+              // Resolve industry info
+              if (business.industryId) {
+                const industryDoc = await Industry.findById(business.industryId).select('title subcategories').lean();
+                if (industryDoc) {
+                  industry = industryDoc.title;
+                  if (business.subIndustryId && industryDoc.subcategories) {
+                    const sub = industryDoc.subcategories.find(s => s.slug === business.subIndustryId || s._id?.toString() === business.subIndustryId);
+                    subIndustry = sub ? sub.title : business.subIndustry || null;
+                  }
+                }
+              } else {
+                industry = business.industry || null;
+                subIndustry = business.subIndustry || null;
+              }
             }
           }
         } else {
-          // If not found in BuilderPage, check if it's a BusinessProfile ID
           const business = await BusinessProfile.findById(favorite.pageData._id)
-            .select('_id builderPageId metrics.favoriteCount').lean();
+            .select('_id builderPageId metrics.favoriteCount industryId subIndustryId industry subIndustry').lean();
           if (business) {
             businessId = business._id.toString();
             pageId = business.builderPageId ? business.builderPageId.toString() : null;
             favoriteCount = business.metrics?.favoriteCount || 0;
+            if (business.industryId) {
+              const industryDoc = await Industry.findById(business.industryId).select('title subcategories').lean();
+              if (industryDoc) {
+                industry = industryDoc.title;
+                if (business.subIndustryId && industryDoc.subcategories) {
+                  const sub = industryDoc.subcategories.find(s => s.slug === business.subIndustryId || s._id?.toString() === business.subIndustryId);
+                  subIndustry = sub ? sub.title : business.subIndustry || null;
+                }
+              }
+            } else {
+              industry = business.industry || null;
+              subIndustry = business.subIndustry || null;
+            }
           }
         }
-        
+
         itemData = {
           ...itemData,
           _id: favorite.pageData._id,
-          id: favorite.pageData._id, // Page ID (BuilderPage ID or BusinessProfile ID)
-          businessId: businessId, // BusinessProfile ID
-          pageId: pageId, // BuilderPage ID
-          favoriteCount: favoriteCount, // Favorites count
+          id: favorite.pageData._id,
+          businessId: businessId,
+          pageId: pageId,
+          favoriteCount: favoriteCount,
           title: favorite.pageData.title,
           slug: favorite.pageData.slug,
           description: favorite.pageData.description,
@@ -767,7 +804,9 @@ exports.getFolderBusinessPages = async (req, res, next) => {
           isPublished: favorite.pageData.isPublished,
           priceRange: favorite.pageData.priceRange,
           location: favorite.pageData.location,
-          pageType: favorite.pageData.pageType
+          pageType: favorite.pageData.pageType,
+          industry: industry,
+          subIndustry: subIndustry
         };
         organizedData.business.push(itemData);
         
@@ -775,8 +814,11 @@ exports.getFolderBusinessPages = async (req, res, next) => {
         // Get businessId from Widget's pageId or businessId
         const Widget = require('../models/widget.model');
         const BusinessProfile = require('../models/businessProfile.model');
+        const Industry = require('../models/industry.model');
         let businessId = null;
-        
+        let industry = null;
+        let subIndustry = null;
+
         const widget = await Widget.findById(favorite.productData.widgetId).select('pageId businessId').lean();
         if (widget?.pageId) {
           const BuilderPage = require('../models/builderPage.model');
@@ -785,12 +827,33 @@ exports.getFolderBusinessPages = async (req, res, next) => {
         } else if (widget?.businessId) {
           businessId = widget.businessId.toString();
         }
-        
+
+        // Resolve industry from businessId
+        if (businessId) {
+          const business = await BusinessProfile.findById(businessId)
+            .select('industryId subIndustryId industry subIndustry').lean();
+          if (business) {
+            if (business.industryId) {
+              const industryDoc = await Industry.findById(business.industryId).select('title subcategories').lean();
+              if (industryDoc) {
+                industry = industryDoc.title;
+                if (business.subIndustryId && industryDoc.subcategories) {
+                  const sub = industryDoc.subcategories.find(s => s.slug === business.subIndustryId || s._id?.toString() === business.subIndustryId);
+                  subIndustry = sub ? sub.title : business.subIndustry || null;
+                }
+              }
+            } else {
+              industry = business.industry || null;
+              subIndustry = business.subIndustry || null;
+            }
+          }
+        }
+
         itemData = {
           ...itemData,
           _id: favorite.productData._id,
-          id: favorite.productData._id, // Product ID
-          businessId: businessId, // BusinessProfile ID
+          id: favorite.productData._id,
+          businessId: businessId,
           title: favorite.productData.productName,
           slug: `${favorite.productData.widgetName}-${favorite.productData.productName}`.toLowerCase().replace(/\s+/g, '-'),
           description: `Product from ${favorite.productData.widgetName}`,
@@ -800,7 +863,9 @@ exports.getFolderBusinessPages = async (req, res, next) => {
           currency: favorite.productData.currency,
           productUrl: favorite.productData.productUrl,
           widgetType: favorite.productData.widgetType,
-          widgetId: favorite.productData.widgetId
+          widgetId: favorite.productData.widgetId,
+          industry: industry,
+          subIndustry: subIndustry
         };
         organizedData.products.push(itemData);
         
@@ -840,8 +905,12 @@ exports.getFolderBusinessPages = async (req, res, next) => {
       } else if (favorite.type === 'Promotion' && favorite.widgetData) {
         // Get businessId from Widget
         const Widget = require('../models/widget.model');
+        const BusinessProfile = require('../models/businessProfile.model');
+        const Industry = require('../models/industry.model');
         let businessId = null;
-        
+        let industry = null;
+        let subIndustry = null;
+
         const widget = await Widget.findById(favorite.widgetId).select('pageId businessId').lean();
         if (widget?.pageId) {
           const BuilderPage = require('../models/builderPage.model');
@@ -850,12 +919,33 @@ exports.getFolderBusinessPages = async (req, res, next) => {
         } else if (widget?.businessId) {
           businessId = widget.businessId.toString();
         }
-        
+
+        // Resolve industry from businessId
+        if (businessId) {
+          const business = await BusinessProfile.findById(businessId)
+            .select('industryId subIndustryId industry subIndustry').lean();
+          if (business) {
+            if (business.industryId) {
+              const industryDoc = await Industry.findById(business.industryId).select('title subcategories').lean();
+              if (industryDoc) {
+                industry = industryDoc.title;
+                if (business.subIndustryId && industryDoc.subcategories) {
+                  const sub = industryDoc.subcategories.find(s => s.slug === business.subIndustryId || s._id?.toString() === business.subIndustryId);
+                  subIndustry = sub ? sub.title : business.subIndustry || null;
+                }
+              }
+            } else {
+              industry = business.industry || null;
+              subIndustry = business.subIndustry || null;
+            }
+          }
+        }
+
         itemData = {
           ...itemData,
           _id: favorite.widgetData._id,
-          id: favorite.widgetData._id, // Widget ID
-          businessId: businessId, // BusinessProfile ID
+          id: favorite.widgetData._id,
+          businessId: businessId,
           title: favorite.widgetData.name,
           slug: favorite.widgetData.name.toLowerCase().replace(/\s+/g, '-'),
           description: `Promotion: ${favorite.widgetData.name}`,
@@ -864,15 +954,21 @@ exports.getFolderBusinessPages = async (req, res, next) => {
           widgetType: favorite.widgetData.type,
           settings: favorite.widgetData.settings,
           layout: favorite.widgetData.layout,
-          status: favorite.widgetData.status
+          status: favorite.widgetData.status,
+          industry: industry,
+          subIndustry: subIndustry
         };
         organizedData.promotions.push(itemData);
         
       } else if (favorite.type === 'Event' && favorite.widgetData) {
         // Get businessId from Widget
         const Widget = require('../models/widget.model');
+        const BusinessProfile = require('../models/businessProfile.model');
+        const Industry = require('../models/industry.model');
         let businessId = null;
-        
+        let industry = null;
+        let subIndustry = null;
+
         const widget = await Widget.findById(favorite.widgetId).select('pageId businessId').lean();
         if (widget?.pageId) {
           const BuilderPage = require('../models/builderPage.model');
@@ -881,12 +977,33 @@ exports.getFolderBusinessPages = async (req, res, next) => {
         } else if (widget?.businessId) {
           businessId = widget.businessId.toString();
         }
-        
+
+        // Resolve industry from businessId
+        if (businessId) {
+          const business = await BusinessProfile.findById(businessId)
+            .select('industryId subIndustryId industry subIndustry').lean();
+          if (business) {
+            if (business.industryId) {
+              const industryDoc = await Industry.findById(business.industryId).select('title subcategories').lean();
+              if (industryDoc) {
+                industry = industryDoc.title;
+                if (business.subIndustryId && industryDoc.subcategories) {
+                  const sub = industryDoc.subcategories.find(s => s.slug === business.subIndustryId || s._id?.toString() === business.subIndustryId);
+                  subIndustry = sub ? sub.title : business.subIndustry || null;
+                }
+              }
+            } else {
+              industry = business.industry || null;
+              subIndustry = business.subIndustry || null;
+            }
+          }
+        }
+
         itemData = {
           ...itemData,
           _id: favorite.widgetData._id,
-          id: favorite.widgetData._id, // Widget ID
-          businessId: businessId, // BusinessProfile ID
+          id: favorite.widgetData._id,
+          businessId: businessId,
           title: favorite.widgetData.name,
           slug: favorite.widgetData.name.toLowerCase().replace(/\s+/g, '-'),
           description: `Event: ${favorite.widgetData.name}`,
@@ -895,7 +1012,9 @@ exports.getFolderBusinessPages = async (req, res, next) => {
           widgetType: favorite.widgetData.type,
           settings: favorite.widgetData.settings,
           layout: favorite.widgetData.layout,
-          status: favorite.widgetData.status
+          status: favorite.widgetData.status,
+          industry: industry,
+          subIndustry: subIndustry
         };
         organizedData.events.push(itemData);
         

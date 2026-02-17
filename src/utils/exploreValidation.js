@@ -113,6 +113,7 @@ exports.validateExploreBusinesses = (data) => {
     ),
     // New search parameters
     toprated: Joi.boolean().default(false),
+    mostliked: Joi.boolean().default(false),
     opennow: Joi.boolean().default(false),
     nearby: Joi.boolean().default(false),
     completeProfile: Joi.boolean().default(false)

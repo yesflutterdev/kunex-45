@@ -59,13 +59,13 @@ exports.getNearbyBusinesses = async (req, res, next) => {
 
     const query = {};
 
-    query.$nor = [
-      {
-        'location.coordinates.coordinates.0': 0,
-        'location.coordinates.coordinates.1': 0
-      }
-    ];
     if (longitude && latitude && (longitude !== 0 || latitude !== 0)) {
+      query.$nor = [
+        {
+          'location.coordinates.coordinates.0': 0,
+          'location.coordinates.coordinates.1': 0
+        }
+      ];
       query['location.coordinates'] = {
         $near: {
           $geometry: {
@@ -984,6 +984,7 @@ exports.exploreBusinesses = async (req, res, next) => {
       features,
       search,
       toprated = false,
+      mostliked = false,
       opennow = false,
       nearby = false,
       completeProfile = false
@@ -991,15 +992,14 @@ exports.exploreBusinesses = async (req, res, next) => {
     const query = {};
     let geoApplied = false;
 
-    // Exclude businesses with default [0,0] coordinates (no real location)
-    query.$nor = [
-      {
-        'location.coordinates.coordinates.0': 0,
-        'location.coordinates.coordinates.1': 0
-      }
-    ];
-
     if (nearby && longitude && latitude) {
+      // Only exclude [0,0] coords when doing geo queries (they break distance calculations)
+      query.$nor = [
+        {
+          'location.coordinates.coordinates.0': 0,
+          'location.coordinates.coordinates.1': 0
+        }
+      ];
       const nearbyRadius = Math.min(maxDistance, 10000);
       query['location.coordinates'] = {
         $near: {
@@ -1012,6 +1012,13 @@ exports.exploreBusinesses = async (req, res, next) => {
       };
       geoApplied = true;
     } else if (longitude && latitude) {
+      // Only exclude [0,0] coords when doing geo queries
+      query.$nor = [
+        {
+          'location.coordinates.coordinates.0': 0,
+          'location.coordinates.coordinates.1': 0
+        }
+      ];
       query['location.coordinates'] = {
         $near: {
           $geometry: {
@@ -1027,7 +1034,19 @@ exports.exploreBusinesses = async (req, res, next) => {
     // Build non-geo filters separately so they can be reused in fallback
     const buildFilters = async (targetQuery) => {
       if (search) {
-        targetQuery.$text = { $search: search };
+        const searchRegex = new RegExp(search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+        const searchOr = [
+          { businessName: searchRegex },
+          { 'description.short': searchRegex },
+          { 'description.full': searchRegex },
+          { industry: searchRegex },
+          { subIndustry: searchRegex },
+          { industryTags: searchRegex },
+          { username: searchRegex }
+        ];
+        targetQuery.$or = targetQuery.$or
+          ? [{ $and: [{ $or: targetQuery.$or }, { $or: searchOr }] }]
+          : searchOr;
       }
 
       if (toprated) {
@@ -1035,16 +1054,27 @@ exports.exploreBusinesses = async (req, res, next) => {
         targetQuery['metrics.ratingCount'] = { $gte: 10 };
       }
 
+      if (mostliked) {
+        targetQuery['metrics.favoriteCount'] = { $gte: 1 };
+      }
+
       if (category) {
         const industryIds = await getIndustryIdsFromCategory(category);
         if (industryIds.length > 0) {
           targetQuery.industryId = { $in: industryIds };
         } else {
-          targetQuery.$or = [
+          const categoryOr = [
             { industry: new RegExp(category, 'i') },
             { subIndustry: new RegExp(category, 'i') },
             { industryTags: new RegExp(category, 'i') }
           ];
+          if (targetQuery.$or) {
+            // search $or already exists, combine with $and
+            targetQuery.$and = targetQuery.$and || [];
+            targetQuery.$and.push({ $or: categoryOr });
+          } else {
+            targetQuery.$or = categoryOr;
+          }
         }
       }
 
@@ -1070,10 +1100,13 @@ exports.exploreBusinesses = async (req, res, next) => {
           if (featuresArray.length === 1) {
             targetQuery.features = new RegExp(featuresArray[0], 'i');
           } else {
-            targetQuery.$or = targetQuery.$or || [];
-            featuresArray.forEach(f => {
-              targetQuery.$or.push({ features: new RegExp(f, 'i') });
-            });
+            const featuresOr = featuresArray.map(f => ({ features: new RegExp(f, 'i') }));
+            if (targetQuery.$or) {
+              targetQuery.$and = targetQuery.$and || [];
+              targetQuery.$and.push({ $or: featuresOr });
+            } else {
+              targetQuery.$or = featuresOr;
+            }
           }
         }
       }
@@ -1103,10 +1136,14 @@ exports.exploreBusinesses = async (req, res, next) => {
       case 'relevance':
       default:
         if (search) {
-          sort.score = { $meta: 'textScore' };
+          sort['metrics.ratingAverage'] = -1;
+          sort['metrics.viewCount'] = -1;
         } else if (toprated) {
           sort['metrics.ratingAverage'] = -1;
           sort['metrics.ratingCount'] = -1;
+        } else if (mostliked) {
+          sort['metrics.favoriteCount'] = -1;
+          sort['metrics.ratingAverage'] = -1;
         } else if (nearby) {
           sort['metrics.ratingAverage'] = -1;
         } else if (opennow) {
@@ -1154,13 +1191,30 @@ exports.exploreBusinesses = async (req, res, next) => {
 
     let finalBusinesses = businesses;
     if (completeProfile) {
+      console.log('\n========== COMPLETE PROFILE CHECK ==========');
+      console.log(`Checking ${businesses.length} businesses for completeness...`);
       const completeBusinesses = [];
       for (const business of businesses) {
         const validationResult = await hasCompleteProfileWithDetails(business);
+        console.log(`\n📄 ${business.businessName}`);
+        if (!validationResult.isComplete) {
+          console.log(`   ❌ INCOMPLETE - Reason: ${validationResult.reason}`);
+          if (validationResult.reason === 'noCover') console.log(`      Missing: Cover Image`);
+          if (validationResult.reason === 'noLogo') console.log(`      Missing: Logo`);
+          if (validationResult.reason === 'noName') console.log(`      Missing: Business Name`);
+          if (validationResult.reason === 'noIndustry') console.log(`      Missing: Industry`);
+          if (validationResult.reason === 'noDescription') console.log(`      Missing: Description (bio)`);
+          if (validationResult.reason === 'noLocation') console.log(`      Missing: Location`);
+          if (validationResult.reason === 'noWidgets') console.log(`      Missing: At least 1 active widget/section`);
+        } else {
+          console.log(`   ✅ COMPLETE - All 7 requirements met`);
+        }
         if (validationResult.isComplete) {
           completeBusinesses.push(business);
         }
       }
+      console.log(`\n📊 RESULT: ${completeBusinesses.length}/${businesses.length} complete profiles`);
+      console.log('========================================\n');
       finalBusinesses = completeBusinesses;
     }
 
@@ -1215,6 +1269,7 @@ exports.exploreBusinesses = async (req, res, next) => {
           features: features || null,
           search: search || null,
           toprated,
+          mostliked,
           opennow,
           nearby
         },
