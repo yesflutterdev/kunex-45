@@ -3,7 +3,11 @@ const BuilderPage = require('../models/builderPage.model');
 const Widget = require('../models/widget.model');
 const BusinessProfile = require('../models/businessProfile.model');
 
-// Submit form data from a user-built page
+function normalizePhone(phone) {
+  if (!phone) return '';
+  return phone.toString().replace(/\D/g, ''); 
+}
+
 exports.submitForm = async (req, res, next) => {
   try {
     const {
@@ -19,7 +23,6 @@ exports.submitForm = async (req, res, next) => {
       utmCampaign
     } = req.body;
 
-    // Validate required fields
     if (!pageId || !widgetId || !formData) {
       return res.status(400).json({
         success: false,
@@ -27,19 +30,14 @@ exports.submitForm = async (req, res, next) => {
       });
     }
 
-    // Verify page exists and is published
-    const page = await BuilderPage.findOne({
-      _id: pageId,
-      // 'settings.isPublished': true 
-    });
-
+    const page = await BuilderPage.findOne({ _id: pageId });
     if (!page) {
       return res.status(404).json({
         success: false,
         message: 'Page not found or not published'
       });
     }
-    // Verify widget exists and is a form type
+
     const widget = await Widget.findOne({
       _id: widgetId,
       pageId: pageId,
@@ -47,8 +45,7 @@ exports.submitForm = async (req, res, next) => {
       status: 'active',
       isVisible: true
     });
-    console.log("widgetId", widgetId);
-    console.log("widget reached", widget);
+
     if (!widget) {
       return res.status(404).json({
         success: false,
@@ -56,24 +53,20 @@ exports.submitForm = async (req, res, next) => {
       });
     }
 
-    // Extract form fields configuration from widget and transform to array format
     const formConfig = widget.settings.specific?.form || {};
     const formFields = [];
 
-    // Transform widget form configuration to array of field objects
-    // Create plain objects that match the schema structure exactly
     if (formConfig.titleTextBox) {
-      const nameField = {
+      formFields.push({
         name: 'name',
         type: 'text',
         label: formConfig.titleTextBox,
         required: true
-      };
-      formFields.push(nameField);
+      });
     }
 
     if (formConfig.hasEmail) {
-      const emailField = {
+      formFields.push({
         name: 'email',
         type: 'email',
         label: 'Email',
@@ -82,64 +75,55 @@ exports.submitForm = async (req, res, next) => {
         validation: {
           pattern: '^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$'
         }
-      };
-      formFields.push(emailField);
+      });
     }
 
     if (formConfig.hasPhoneNumber) {
-      const phoneField = {
+      formFields.push({
         name: 'phone',
         type: 'phone',
         label: 'Phone Number',
         placeholder: formConfig.phoneNumberPlaceholder || 'Enter your phone number',
-        required: false,
-        validation: {
-          pattern: '^[\\+]?[1-9][\\d]{0,15}$'
-        }
-      };
-      formFields.push(phoneField);
+        required: false
+      });
     }
 
-    // Add a default message field if no other fields are configured
     if (formFields.length === 0) {
-      const messageField = {
+      formFields.push({
         name: 'message',
         type: 'textarea',
         label: 'Message',
         required: true
-      };
-      formFields.push(messageField);
+      });
     }
 
-    // Validate form data against widget configuration
     const validationErrors = [];
+
     for (const field of formFields) {
+
       if (field.required && (!formData[field.name] || formData[field.name].toString().trim() === '')) {
         validationErrors.push(`${field.name} is required`);
+        continue;
       }
 
-      if (formData[field.name] && field.validation) {
-        const value = formData[field.name];
+      if (!formData[field.name]) continue;
 
-        if (field.validation.minLength && value.toString().length < field.validation.minLength) {
-          validationErrors.push(`${field.name} must be at least ${field.validation.minLength} characters`);
+      let value = formData[field.name].toString().trim();
+
+      if (field.type === 'email') {
+        const regex = new RegExp(field.validation.pattern);
+        if (!regex.test(value)) {
+          validationErrors.push(`${field.name} must be a valid email address`);
         }
+      }
 
-        if (field.validation.maxLength && value.toString().length > field.validation.maxLength) {
-          validationErrors.push(`${field.name} must be no more than ${field.validation.maxLength} characters`);
-        }
+      if (field.type === 'phone') {
+        const cleanedPhone = normalizePhone(value);
 
-        if (field.validation.pattern) {
-          const regex = new RegExp(field.validation.pattern);
-          if (!regex.test(value)) {
-            if (field.type === 'email') {
-              validationErrors.push(`${field.name} must be a valid email address`);
-            } else if (field.type === 'phone') {
-              validationErrors.push(`${field.name} must be a valid phone number`);
-            } else {
-              validationErrors.push(`${field.name} format is invalid`);
-            }
-          }
+        formData[field.name] = cleanedPhone;
+
+        if (cleanedPhone.length <= 7) {
+          validationErrors.push('Phone number must be more than 7 digits');
         }
       }
     }
@@ -152,13 +136,12 @@ exports.submitForm = async (req, res, next) => {
       });
     }
 
-    // Create submission data
     const submissionData = {
       pageId,
       widgetId,
       businessId: page.businessId,
       formData,
-      formFields: formFields, // Add formFields back
+      formFields,
       submissionType,
       timeOnPage,
       formCompletionTime,
@@ -170,16 +153,9 @@ exports.submitForm = async (req, res, next) => {
       userAgent: req.get('User-Agent')
     };
 
-    let submission;
-    try {
-      submission = new FormSubmission(submissionData);
-      await submission.save();
-    } catch (saveError) {
-      console.error('Save error:', saveError);
-      throw saveError;
-    }
+    const submission = new FormSubmission(submissionData);
+    await submission.save();
 
-    // Update widget analytics
     await widget.updateAnalytics('conversions', 1);
 
     res.status(201).json({
@@ -190,10 +166,12 @@ exports.submitForm = async (req, res, next) => {
         message: 'Thank you for your submission!'
       }
     });
+
   } catch (error) {
     next(error);
   }
 };
+
 
 // Get form submissions for a business (authenticated)
 exports.getSubmissions = async (req, res, next) => {
