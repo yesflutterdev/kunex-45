@@ -10,7 +10,7 @@ exports.validateNearbyBusinesses = (data) => {
     category: Joi.string().trim().max(100).allow(''),
     rating: Joi.number().min(1).max(5),
     priceRange: Joi.alternatives().try(
-      Joi.string().valid('$', '$$', '$$$', '$$$$'),
+      Joi.string().valid('$', '$$', '$$$', '$$$$', '').allow(''),
       Joi.array().items(Joi.string().valid('$', '$$', '$$$', '$$$$'))
     ),
     openedStatus: Joi.string().valid('open', 'closed', 'any').default('any'),
@@ -43,7 +43,7 @@ exports.validateTopPicks = (data) => {
     limit: Joi.number().min(1).max(30).default(15),
     category: Joi.string().trim().max(100).allow(''),
     priceRange: Joi.alternatives().try(
-      Joi.string().valid('$', '$$', '$$$', '$$$$'),
+      Joi.string().valid('$', '$$', '$$$', '$$$$', '').allow(''),
       Joi.array().items(Joi.string().valid('$', '$$', '$$$', '$$$$'))
     ),
     openedStatus: Joi.string().valid('open', 'closed', 'any').default('any'),
@@ -62,7 +62,7 @@ exports.validateOnTheRise = (data) => {
     limit: Joi.number().min(1).max(30).default(15),
     category: Joi.string().trim().max(100).allow(''),
     priceRange: Joi.alternatives().try(
-      Joi.string().valid('$', '$$', '$$$', '$$$$'),
+      Joi.string().valid('$', '$$', '$$$', '$$$$', '').allow(''),
       Joi.array().items(Joi.string().valid('$', '$$', '$$$', '$$$$'))
     ),
     daysBack: Joi.number().min(1).max(365).default(30), // Look back 1 day to 1 year
@@ -93,7 +93,7 @@ exports.validateExploreBusinesses = (data) => {
     category: Joi.string().trim().max(100).allow(''),
     rating: Joi.number().min(1).max(5),
     priceRange: Joi.alternatives().try(
-      Joi.string().valid('$', '$$', '$$$', '$$$$'),
+      Joi.string().valid('$', '$$', '$$$', '$$$$', '').allow(''),
       Joi.array().items(Joi.string().valid('$', '$$', '$$$', '$$$$'))
     ),
     openedStatus: Joi.string().valid('open', 'closed', 'any').default('any'),
@@ -129,7 +129,7 @@ exports.validateRecentSearches = (data) => {
     category: Joi.string().trim().max(100).allow(''),
     location: Joi.string().trim().max(200).allow(''),
     priceRange: Joi.alternatives().try(
-      Joi.string().valid('$', '$$', '$$$', '$$$$'),
+      Joi.string().valid('$', '$$', '$$$', '$$$$', '').allow(''),
       Joi.array().items(Joi.string().valid('$', '$$', '$$$', '$$$$'))
     ),
     businessType: Joi.string().valid(
@@ -265,7 +265,7 @@ exports.validateRecents = (data) => {
     limit: Joi.number().min(1).max(30).default(15),
     category: Joi.string().trim().max(100).allow(''),
     priceRange: Joi.alternatives().try(
-      Joi.string().valid('$', '$$', '$$$', '$$$$'),
+      Joi.string().valid('$', '$$', '$$$', '$$$$', '').allow(''),
       Joi.array().items(Joi.string().valid('$', '$$', '$$$', '$$$$'))
     ),
     openedStatus: Joi.string().valid('open', 'closed', 'any').default('any'),
@@ -284,7 +284,7 @@ exports.validateNewlyAdded = (data) => {
     limit: Joi.number().min(1).max(30).default(15),
     category: Joi.string().trim().max(100).allow(''),
     priceRange: Joi.alternatives().try(
-      Joi.string().valid('$', '$$', '$$$', '$$$$'),
+      Joi.string().valid('$', '$$', '$$$', '$$$$', '').allow(''),
       Joi.array().items(Joi.string().valid('$', '$$', '$$$', '$$$$'))
     ),
     openedStatus: Joi.string().valid('open', 'closed', 'any').default('any'),

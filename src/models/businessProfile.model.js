@@ -108,7 +108,8 @@ const businessProfileSchema = new mongoose.Schema(
     },
     priceRange: {
       type: String,
-      enum: ['$', '$$', '$$$', '$$$$']
+      enum: ['$', '$$', '$$$', '$$$$', ''],
+      default: ''
     },
     contactInfo: {
       email: {
