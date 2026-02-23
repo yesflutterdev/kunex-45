@@ -965,7 +965,7 @@ exports.exploreBusinesses = async (req, res, next) => {
       return res.status(400).json({
         success: false,
         message: 'Validation error',
-        errors: error.details.map(detail => detail.message),
+        errors: error.details.map(d => d.message)
       });
     }
 
@@ -989,139 +989,102 @@ exports.exploreBusinesses = async (req, res, next) => {
       nearby = false,
       completeProfile = false
     } = value;
-    const query = {};
-    let geoApplied = false;
 
-    if (nearby && longitude && latitude) {
-      // Only exclude [0,0] coords when doing geo queries (they break distance calculations)
-      query.$nor = [
-        {
-          'location.coordinates.coordinates.0': 0,
-          'location.coordinates.coordinates.1': 0
-        }
-      ];
-      const nearbyRadius = Math.min(maxDistance, 10000);
+    const hasGeo = Boolean(longitude && latitude);
+    const query = {};
+
+    // Geo filter — exclude [0,0] placeholder coords (break geo distance calculations)
+    if (hasGeo) {
+      const radius = nearby ? Math.min(maxDistance, 10000) : maxDistance;
+      query.$nor = [{ 'location.coordinates.coordinates.0': 0, 'location.coordinates.coordinates.1': 0 }];
       query['location.coordinates'] = {
         $near: {
-          $geometry: {
-            type: 'Point',
-            coordinates: [longitude, latitude]
-          },
-          $maxDistance: nearbyRadius
+          $geometry: { type: 'Point', coordinates: [longitude, latitude] },
+          $maxDistance: radius
         }
       };
-      geoApplied = true;
-    } else if (longitude && latitude) {
-      // Only exclude [0,0] coords when doing geo queries
-      query.$nor = [
-        {
-          'location.coordinates.coordinates.0': 0,
-          'location.coordinates.coordinates.1': 0
-        }
-      ];
-      query['location.coordinates'] = {
-        $near: {
-          $geometry: {
-            type: 'Point',
-            coordinates: [longitude, latitude]
-          },
-          $maxDistance: maxDistance
-        }
-      };
-      geoApplied = true;
     }
 
-    // Build non-geo filters separately so they can be reused in fallback
-    const buildFilters = async (targetQuery) => {
-      if (search) {
-        const searchRegex = new RegExp(search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
-        const searchOr = [
-          { businessName: searchRegex },
-          { 'description.short': searchRegex },
-          { 'description.full': searchRegex },
-          { industry: searchRegex },
-          { subIndustry: searchRegex },
-          { industryTags: searchRegex },
-          { username: searchRegex }
+    // Search filter
+    if (search) {
+      const searchRegex = new RegExp(search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+      const searchOr = [
+        { businessName: searchRegex },
+        { 'description.short': searchRegex },
+        { 'description.full': searchRegex },
+        { industry: searchRegex },
+        { subIndustry: searchRegex },
+        { industryTags: searchRegex },
+        { username: searchRegex }
+      ];
+      query.$or = query.$or
+        ? [{ $and: [{ $or: query.$or }, { $or: searchOr }] }]
+        : searchOr;
+    }
+
+    // Category filter
+    if (category) {
+      const industryIds = await getIndustryIdsFromCategory(category);
+      if (industryIds.length > 0) {
+        query.industryId = { $in: industryIds };
+      } else {
+        const categoryOr = [
+          { industry: new RegExp(category, 'i') },
+          { subIndustry: new RegExp(category, 'i') },
+          { industryTags: new RegExp(category, 'i') }
         ];
-        targetQuery.$or = targetQuery.$or
-          ? [{ $and: [{ $or: targetQuery.$or }, { $or: searchOr }] }]
-          : searchOr;
-      }
-
-      if (toprated) {
-        targetQuery['metrics.ratingAverage'] = { $gte: 4.0 };
-        targetQuery['metrics.ratingCount'] = { $gte: 10 };
-      }
-
-      if (mostliked) {
-        targetQuery['metrics.favoriteCount'] = { $gte: 1 };
-      }
-
-      if (category) {
-        const industryIds = await getIndustryIdsFromCategory(category);
-        if (industryIds.length > 0) {
-          targetQuery.industryId = { $in: industryIds };
+        if (query.$or) {
+          query.$and = [...(query.$and || []), { $or: categoryOr }];
         } else {
-          const categoryOr = [
-            { industry: new RegExp(category, 'i') },
-            { subIndustry: new RegExp(category, 'i') },
-            { industryTags: new RegExp(category, 'i') }
-          ];
-          if (targetQuery.$or) {
-            // search $or already exists, combine with $and
-            targetQuery.$and = targetQuery.$and || [];
-            targetQuery.$and.push({ $or: categoryOr });
-          } else {
-            targetQuery.$or = categoryOr;
-          }
+          query.$or = categoryOr;
         }
       }
+    }
 
-      if (rating) {
-        targetQuery['metrics.ratingAverage'] = { $gte: rating };
-      }
+    // toprated: min 4.0 stars AND min 10 ratings
+    if (toprated) {
+      query['metrics.ratingAverage'] = { $gte: 4.0 };
+      query['metrics.ratingCount'] = { $gte: 10 };
+    }
 
-      if (priceRange) {
-        if (Array.isArray(priceRange)) {
-          targetQuery.priceRange = { $in: priceRange };
+    if (mostliked) {
+      query['metrics.favoriteCount'] = { $gte: 1 };
+    }
+
+    // rating filter — merges with toprated to use the higher threshold
+    if (rating) {
+      const minRating = toprated ? Math.max(4.0, rating) : rating;
+      query['metrics.ratingAverage'] = { $gte: minRating };
+    }
+
+    if (priceRange) {
+      query.priceRange = Array.isArray(priceRange) ? { $in: priceRange } : priceRange;
+    }
+
+    if (businessType) {
+      query.businessType = businessType;
+    }
+
+    if (features) {
+      const featuresArray = Array.isArray(features) ? features : [features];
+      if (featuresArray.length === 1) {
+        query.features = new RegExp(featuresArray[0], 'i');
+      } else if (featuresArray.length > 1) {
+        const featuresOr = featuresArray.map(f => ({ features: new RegExp(f, 'i') }));
+        if (query.$or) {
+          query.$and = [...(query.$and || []), { $or: featuresOr }];
         } else {
-          targetQuery.priceRange = priceRange;
+          query.$or = featuresOr;
         }
       }
+    }
 
-      if (businessType) {
-        targetQuery.businessType = businessType;
-      }
-
-      if (features) {
-        const featuresArray = Array.isArray(features) ? features : [features];
-        if (featuresArray.length > 0) {
-          if (featuresArray.length === 1) {
-            targetQuery.features = new RegExp(featuresArray[0], 'i');
-          } else {
-            const featuresOr = featuresArray.map(f => ({ features: new RegExp(f, 'i') }));
-            if (targetQuery.$or) {
-              targetQuery.$and = targetQuery.$and || [];
-              targetQuery.$and.push({ $or: featuresOr });
-            } else {
-              targetQuery.$or = featuresOr;
-            }
-          }
-        }
-      }
-    };
-
-    await buildFilters(query);
-
+    // Sort
     const sort = {};
-
     switch (sortBy) {
       case 'rating':
         sort['metrics.ratingAverage'] = -1;
         sort['metrics.ratingCount'] = -1;
-        break;
-      case 'distance':
         break;
       case 'popularity':
         sort['metrics.viewCount'] = -1;
@@ -1133,133 +1096,98 @@ exports.exploreBusinesses = async (req, res, next) => {
       case 'alphabetical':
         sort.businessName = 1;
         break;
-      case 'relevance':
-      default:
-        if (search) {
-          sort['metrics.ratingAverage'] = -1;
-          sort['metrics.viewCount'] = -1;
-        } else if (toprated) {
-          sort['metrics.ratingAverage'] = -1;
-          sort['metrics.ratingCount'] = -1;
-        } else if (mostliked) {
-          sort['metrics.favoriteCount'] = -1;
-          sort['metrics.ratingAverage'] = -1;
-        } else if (nearby) {
-          sort['metrics.ratingAverage'] = -1;
-        } else if (opennow) {
-          sort['metrics.ratingAverage'] = -1;
-          sort['metrics.viewCount'] = -1;
-        } else {
-          sort['metrics.ratingAverage'] = -1;
-          sort['metrics.viewCount'] = -1;
-        }
+      case 'distance':
+        // $near already sorts by distance from nearest to farthest
+        break;
+      default: // relevance
+        if (mostliked) sort['metrics.favoriteCount'] = -1;
+        sort['metrics.ratingAverage'] = -1;
+        sort['metrics.viewCount'] = -1;
         break;
     }
 
-    const fetchLimit = limit * 3;
     const skip = (page - 1) * limit;
 
     let businesses = await BusinessProfile.find(query)
-        .populate('userId', 'firstName lastName')
-        .populate('builderPageId', 'serviceHours')
-        .select('-__v')
-        .sort(sort)
-      .limit(fetchLimit)
+      .populate('userId', 'firstName lastName')
+      .populate('builderPageId', 'serviceHours')
+      .select('-__v')
+      .sort(sort)
+      .limit(limit * 3)
       .lean();
 
-    // Fallback: if geo query returned 0 results, retry without geo filter
-    if (businesses.length === 0 && geoApplied) {
-      const fallbackQuery = {};
-      await buildFilters(fallbackQuery);
-
-      const fallbackSort = Object.keys(sort).length > 0
-        ? sort
-        : { 'metrics.ratingAverage': -1, 'metrics.viewCount': -1 };
-
-      businesses = await BusinessProfile.find(fallbackQuery)
-        .populate('userId', 'firstName lastName')
-        .populate('builderPageId', 'serviceHours')
-        .select('-__v')
-        .sort(fallbackSort)
-        .limit(fetchLimit)
-        .lean();
+    // No results within geo radius — return empty, no silent fallback
+    if (businesses.length === 0 && hasGeo) {
+      return res.status(200).json({
+        success: true,
+        data: {
+          businesses: [],
+          pagination: { currentPage: page, totalPages: 0, totalBusinesses: 0, hasNextPage: false, hasPrevPage: false, limit },
+          searchCenter: { latitude, longitude },
+          appliedFilters: {
+            category: category || null,
+            rating: rating || null,
+            priceRange: priceRange || null,
+            openedStatus: openedStatus || 'any',
+            businessType: businessType || null,
+            features: features || null,
+            search: search || null,
+            toprated,
+            mostliked,
+            opennow,
+            nearby
+          },
+          sortedBy: sortBy,
+          message: 'No businesses found within the specified distance'
+        }
+      });
     }
 
+    // Filter by open status
     if ((openedStatus === 'open' || opennow) && businesses.length > 0) {
       businesses = filterByOpenedStatus(businesses);
     }
 
-    let finalBusinesses = businesses;
-    if (completeProfile) {
-      console.log('\n========== COMPLETE PROFILE CHECK ==========');
-      console.log(`Checking ${businesses.length} businesses for completeness...`);
-      const completeBusinesses = [];
+    // Filter by complete profile
+    if (completeProfile && businesses.length > 0) {
+      const complete = [];
       for (const business of businesses) {
-        const validationResult = await hasCompleteProfileWithDetails(business);
-        console.log(`\n📄 ${business.businessName}`);
-        if (!validationResult.isComplete) {
-          console.log(`   ❌ INCOMPLETE - Reason: ${validationResult.reason}`);
-          if (validationResult.reason === 'noCover') console.log(`      Missing: Cover Image`);
-          if (validationResult.reason === 'noLogo') console.log(`      Missing: Logo`);
-          if (validationResult.reason === 'noName') console.log(`      Missing: Business Name`);
-          if (validationResult.reason === 'noIndustry') console.log(`      Missing: Industry`);
-          if (validationResult.reason === 'noDescription') console.log(`      Missing: Description (bio)`);
-          if (validationResult.reason === 'noLocation') console.log(`      Missing: Location`);
-          if (validationResult.reason === 'noWidgets') console.log(`      Missing: At least 1 active widget/section`);
-        } else {
-          console.log(`   ✅ COMPLETE - All 7 requirements met`);
-        }
-        if (validationResult.isComplete) {
-          completeBusinesses.push(business);
-        }
+        const { isComplete } = await hasCompleteProfileWithDetails(business);
+        if (isComplete) complete.push(business);
       }
-      console.log(`\n📊 RESULT: ${completeBusinesses.length}/${businesses.length} complete profiles`);
-      console.log('========================================\n');
-      finalBusinesses = completeBusinesses;
+      businesses = complete;
     }
 
-    const paginatedBusinesses = finalBusinesses.slice(skip, skip + limit);
-    const filteredTotalCount = finalBusinesses.length;
+    const totalBusinesses = businesses.length;
+    const totalPages = Math.ceil(totalBusinesses / limit);
+    const paginatedBusinesses = businesses.slice(skip, skip + limit);
 
-    const businessesWithDetails = paginatedBusinesses.map((business) => {
-      let distance = null;
-      if (longitude && latitude && business.location?.coordinates?.coordinates) {
-        distance = calculateDistance(
-          latitude,
-          longitude,
-          business.location.coordinates.coordinates[1],
-          business.location.coordinates.coordinates[0]
-        );
-        distance = Math.round(distance * 100) / 100;
-      }
+    const businessesWithDetails = paginatedBusinesses.map(business => ({
+      ...business,
+      isCurrentlyOpen: checkIfCurrentlyOpen(business.builderPageId),
+      distance: hasGeo && business.location?.coordinates?.coordinates
+        ? Math.round(calculateDistance(
+            latitude, longitude,
+            business.location.coordinates.coordinates[1],
+            business.location.coordinates.coordinates[0]
+          ) * 100) / 100
+        : null,
+      distanceUnit: hasGeo ? 'km' : null
+    }));
 
-      const isCurrentlyOpen = checkIfCurrentlyOpen(business.builderPageId);
-
-      return {
-        ...business,
-        distance,
-        isCurrentlyOpen,
-        distanceUnit: distance !== null ? 'km' : null
-      };
-    });
-
-    const totalPages = Math.ceil(filteredTotalCount / limit);
-    const hasNextPage = page < totalPages;
-    const hasPrevPage = page > 1;
-
-    res.status(200).json({
+    return res.status(200).json({
       success: true,
       data: {
         businesses: businessesWithDetails,
         pagination: {
           currentPage: page,
           totalPages,
-          totalBusinesses: filteredTotalCount,
-          hasNextPage,
-          hasPrevPage,
+          totalBusinesses,
+          hasNextPage: page < totalPages,
+          hasPrevPage: page > 1,
           limit
         },
-        searchCenter: longitude && latitude ? { latitude, longitude } : null,
+        searchCenter: hasGeo ? { latitude, longitude } : null,
         appliedFilters: {
           category: category || null,
           rating: rating || null,
@@ -1274,9 +1202,10 @@ exports.exploreBusinesses = async (req, res, next) => {
           nearby
         },
         sortedBy: sortBy
-      },
+      }
     });
   } catch (error) {
+    console.error('exploreBusinesses error:', error);
     next(error);
   }
 };
