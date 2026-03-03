@@ -1316,7 +1316,7 @@ exports.getFavoritedBusinessDetails = async (req, res, next) => {
       }
 
       builderPage = await BuilderPage.findById(pageId)
-        .select('_id title cover logo businessId')
+        .select('_id title cover isAutoShade styling.themeColors.background styling.themeColors.text logo businessId')
         .lean();
 
       if (!builderPage || !builderPage._id) {
@@ -1409,6 +1409,11 @@ exports.getFavoritedBusinessDetails = async (req, res, next) => {
       success: true,
       data: {
         pageData: {
+          bgColor:
+            builderPage?.styling?.themeColors?.background || '#111111',
+        textColor:
+          builderPage?.styling?.themeColors?.text || '#ffffff',
+          isAutoShade: builderPage?.isAutoShade ?? false,
           coverImage: builderPage?.cover || business.coverImage || null,
           logo: builderPage?.logo || business.logo || null,
           name: business.businessName || null,
@@ -1416,7 +1421,8 @@ exports.getFavoritedBusinessDetails = async (req, res, next) => {
           businessId: business._id.toString(),
           industry: business.industry || null,
           address: address,
-          timeWidgetAdded: latestWidgetDate
+          timeWidgetAdded: latestWidgetDate,
+          
         },
         widgets: newWidgets || []
       }
