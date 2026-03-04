@@ -1303,7 +1303,7 @@ exports.getFavoritedBusinessDetails = async (req, res, next) => {
 
       if (business.builderPageId && mongoose.Types.ObjectId.isValid(business.builderPageId)) {
         builderPage = await BuilderPage.findById(business.builderPageId)
-          .select('_id title cover logo')
+          .select('_id title cover logo isAutoShade theme.colors.background theme.colors.text')
           .lean();
         pageIdToUse = business.builderPageId;
       }
@@ -1316,7 +1316,7 @@ exports.getFavoritedBusinessDetails = async (req, res, next) => {
       }
 
       builderPage = await BuilderPage.findById(pageId)
-        .select('_id title cover logo businessId')
+        .select('_id title cover logo businessId isAutoShade theme.colors.background theme.colors.text')
         .lean();
 
       if (!builderPage || !builderPage._id) {
@@ -1416,7 +1416,10 @@ exports.getFavoritedBusinessDetails = async (req, res, next) => {
           businessId: business._id.toString(),
           industry: business.industry || null,
           address: address,
-          timeWidgetAdded: latestWidgetDate
+          timeWidgetAdded: latestWidgetDate,
+          isAutoShade: builderPage?.isAutoShade ?? false,
+          backgroundColor: builderPage?.theme?.colors?.background || null,
+          textColor: builderPage?.theme?.colors?.text || null
         },
         widgets: newWidgets || []
       }
