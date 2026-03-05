@@ -5,7 +5,7 @@ exports.validateNearbyBusinesses = (data) => {
   const schema = Joi.object({
     longitude: Joi.number().min(-180).max(180),
     latitude: Joi.number().min(-90).max(90),
-    maxDistance: Joi.number().min(100).max(100000).default(25000), // 100m to 100km, default 25km
+    maxDistance: Joi.number().min(100).max(100000).default(25000),
     limit: Joi.number().min(1).max(50).default(15),
     category: Joi.string().trim().max(100).allow(''),
     rating: Joi.number().min(1).max(5),
@@ -14,22 +14,8 @@ exports.validateNearbyBusinesses = (data) => {
       Joi.array().items(Joi.string().valid('$', '$$', '$$$', '$$$$'))
     ),
     openedStatus: Joi.string().valid('open', 'closed', 'any').default('any'),
-    businessType: Joi.string().valid(
-      'Small business',
-      'Medium sized business',
-      'Franchise',
-      'Corporation',
-      'Non profit organizations',
-      'Startup',
-      'Online business',
-      'Others'
-    ),
-    features: Joi.alternatives().try(
-      Joi.string().trim().max(100),
-      Joi.array().items(Joi.string().trim().max(100))
-    ),
     completeProfile: Joi.boolean().default(false)
-  });
+  }).and('longitude', 'latitude');
 
   return schema.validate(data, { abortEarly: false });
 };

@@ -41,54 +41,50 @@ exports.getNearbyBusinesses = async (req, res, next) => {
       rating,
       priceRange,
       openedStatus,
-      businessType,
-      features,
       completeProfile = false
     } = value;
 
     let longitude = queryLongitude;
     let latitude = queryLatitude;
 
-    if (!longitude || !latitude) {
-      const user = await User.findById(userId).select('longitude latitude city').lean();
-      if (user && user.longitude && user.latitude && (user.longitude !== 0 || user.latitude !== 0)) {
+    const hasGeo = longitude != null && latitude != null;
+
+    if (!hasGeo) {
+      const user = await User.findById(userId).select('longitude latitude').lean();
+      if (user && user.longitude != null && user.latitude != null && (user.longitude !== 0 || user.latitude !== 0)) {
         longitude = user.longitude;
         latitude = user.latitude;
       }
     }
 
-    const query = {};
+    const geoActive = longitude != null && latitude != null && (longitude !== 0 || latitude !== 0);
 
-    if (longitude && latitude && (longitude !== 0 || latitude !== 0)) {
+    const query = { userId: { $ne: mongoose.Types.ObjectId.createFromHexString(userId) } };
+
+    if (geoActive) {
       query.$nor = [
-        {
-          'location.coordinates.coordinates.0': 0,
-          'location.coordinates.coordinates.1': 0
-        }
+        { 'location.coordinates.coordinates.0': 0, 'location.coordinates.coordinates.1': 0 },
+        { 'location.coordinates': { $exists: false } }
       ];
       query['location.coordinates'] = {
         $near: {
-          $geometry: {
-            type: 'Point',
-            coordinates: [longitude, latitude]
-          },
+          $geometry: { type: 'Point', coordinates: [longitude, latitude] },
           $maxDistance: maxDistance
         }
       };
     }
 
-    // Apply filters - use industryId (ObjectId) matching
     if (category) {
       const industryIds = await getIndustryIdsFromCategory(category);
       if (industryIds.length > 0) {
         query.industryId = { $in: industryIds };
       } else {
-        // Fallback to string matching if no Industry found (backward compatibility)
-      query.$or = [
-        { industry: new RegExp(category, 'i') },
-        { subIndustry: new RegExp(category, 'i') },
+        query.$and = query.$and || [];
+        query.$and.push({ $or: [
+          { industry: new RegExp(category, 'i') },
+          { subIndustry: new RegExp(category, 'i') },
           { industryTags: new RegExp(category, 'i') }
-      ];
+        ]});
       }
     }
 
@@ -97,34 +93,10 @@ exports.getNearbyBusinesses = async (req, res, next) => {
     }
 
     if (priceRange) {
-      if (Array.isArray(priceRange)) {
-        query.priceRange = { $in: priceRange };
-      } else {
-        query.priceRange = priceRange;
-      }
+      query.priceRange = Array.isArray(priceRange) ? { $in: priceRange } : priceRange;
     }
 
-    if (businessType) {
-      query.businessType = businessType;
-    }
-
-    if (features) {
-      // Normalize features to array (handle both string and array inputs)
-      const featuresArray = Array.isArray(features) ? features : [features];
-      
-      if (featuresArray.length > 0) {
-        // For array fields, use RegExp directly (MongoDB supports this)
-        if (featuresArray.length === 1) {
-          query.features = new RegExp(featuresArray[0], 'i');
-        } else {
-          // For multiple features, use $or
-          query.$or = query.$or || [];
-          featuresArray.forEach(f => {
-            query.$or.push({ features: new RegExp(f, 'i') });
-          });
-        }
-      }
-    }
+    const fetchLimit = limit * 4;
 
     let businesses = await BusinessProfile.find(query)
       .populate('userId', 'firstName lastName')
@@ -136,48 +108,69 @@ exports.getNearbyBusinesses = async (req, res, next) => {
         'metrics.ratingAverage': -1,
         'metrics.ratingCount': -1
       })
-      .limit(limit * 2)
+      .limit(fetchLimit)
       .lean();
 
     if (openedStatus === 'open' && businesses.length > 0) {
       businesses = filterByOpenedStatus(businesses);
     }
 
-    let finalBusinesses = businesses;
-    if (businesses.length === 0 && longitude && latitude && (longitude !== 0 || latitude !== 0)) {
-      const fallbackQuery = { ...query };
-      delete fallbackQuery['location.coordinates'];
-      
-      finalBusinesses = await BusinessProfile.find(fallbackQuery)
-        .populate('userId', 'firstName lastName')
-        .populate('builderPageId', 'serviceHours')
-        .select('-__v')
-        .sort({
-          'metrics.viewCount': -1,
-          'metrics.favoriteCount': -1,
-          'metrics.ratingAverage': -1,
-          'metrics.ratingCount': -1
-        })
-        .limit(limit)
-        .lean();
+    let isFallback = false;
+    if (businesses.length === 0 && geoActive) {
+      const expansionMultipliers = [2, 4];
+      for (const multiplier of expansionMultipliers) {
+        const expandedDistance = maxDistance * multiplier;
+        const expandedQuery = { ...query };
+        delete expandedQuery.$nor;
+        delete expandedQuery['location.coordinates'];
+        expandedQuery['location.coordinates'] = {
+          $near: {
+            $geometry: { type: 'Point', coordinates: [longitude, latitude] },
+            $maxDistance: expandedDistance
+          }
+        };
+        let expanded = await BusinessProfile.find(expandedQuery)
+          .populate('userId', 'firstName lastName')
+          .populate('builderPageId', 'serviceHours')
+          .select('-__v')
+          .sort({
+            'metrics.viewCount': -1,
+            'metrics.favoriteCount': -1,
+            'metrics.ratingAverage': -1,
+            'metrics.ratingCount': -1
+          })
+          .limit(fetchLimit)
+          .lean();
+
+        if (openedStatus === 'open' && expanded.length > 0) {
+          expanded = filterByOpenedStatus(expanded);
+        }
+
+        if (expanded.length > 0) {
+          businesses = expanded;
+          isFallback = true;
+          break;
+        }
+      }
     }
 
-    const topBusinesses = finalBusinesses.slice(0, limit);
-
-    let filteredBusinesses = topBusinesses;
+    let filteredBusinesses = businesses;
     if (completeProfile) {
       const completeBusinesses = [];
-      for (const business of topBusinesses) {
+      for (const business of businesses) {
         const validationResult = await hasCompleteProfileWithDetails(business);
         if (validationResult.isComplete) {
           completeBusinesses.push(business);
+          if (completeBusinesses.length >= limit) break;
         }
       }
-      filteredBusinesses = completeBusinesses.slice(0, limit);
+      filteredBusinesses = completeBusinesses;
+    } else {
+      filteredBusinesses = businesses.slice(0, limit);
     }
 
     let distances = [];
-    if (longitude && latitude && (longitude !== 0 || latitude !== 0)) {
+    if (geoActive) {
       const businessLocations = filteredBusinesses
         .filter(business => business.location?.coordinates?.coordinates)
         .map(business => ({
@@ -193,7 +186,7 @@ exports.getNearbyBusinesses = async (req, res, next) => {
     let distanceIndex = 0;
     const businessesWithDetails = filteredBusinesses.map(business => {
       let distance = null;
-      if (longitude && latitude && (longitude !== 0 || latitude !== 0) && business.location?.coordinates?.coordinates) {
+      if (geoActive && business.location?.coordinates?.coordinates) {
         if (distances?.length > distanceIndex) {
           distance = Math.round(distances[distanceIndex] * 100) / 100;
         } else {
@@ -219,9 +212,10 @@ exports.getNearbyBusinesses = async (req, res, next) => {
       success: true,
       data: {
         businesses: businessesWithDetails,
-        searchCenter: longitude && latitude ? { latitude, longitude } : null,
+        searchCenter: geoActive ? { latitude, longitude } : null,
         totalFound: businessesWithDetails.length,
-        sortedBy: 'nearby'
+        sortedBy: geoActive && !isFallback ? 'nearby' : 'relevance',
+        expandedSearch: isFallback
       },
     });
   } catch (error) {
@@ -295,7 +289,7 @@ exports.getTopPicks = async (req, res, next) => {
       });
     }
 
-    const query = {};
+    const query = { userId: { $ne: mongoose.Types.ObjectId.createFromHexString(userId) } };
 
     if (longitude && latitude) {
       query['location.coordinates'] = {
@@ -323,7 +317,7 @@ exports.getTopPicks = async (req, res, next) => {
       const orConditions = [];
       
       if (preferredIndustryIds.size > 0) {
-        const industryIds = Array.from(preferredIndustryIds).map(id => new mongoose.Types.ObjectId(id));
+        const industryIds = Array.from(preferredIndustryIds).map(id => mongoose.Types.ObjectId.createFromHexString(id));
         orConditions.push({ industryId: { $in: industryIds } });
       }
       
@@ -450,6 +444,7 @@ exports.getOnTheRise = async (req, res, next) => {
       });
     }
 
+    const userId = req.user.id;
     const {
       longitude,
       latitude,
@@ -461,7 +456,7 @@ exports.getOnTheRise = async (req, res, next) => {
       completeProfile = false
     } = value;
 
-    const query = {};
+    const query = { userId: { $ne: mongoose.Types.ObjectId.createFromHexString(userId) } };
 
     if (longitude && latitude) {
       query['location.coordinates'] = {
@@ -610,6 +605,7 @@ exports.getNewlyAdded = async (req, res, next) => {
       });
     }
 
+    const userId = req.user.id;
     const {
       longitude,
       latitude,
@@ -621,7 +617,7 @@ exports.getNewlyAdded = async (req, res, next) => {
       completeProfile = false
     } = value;
 
-    const query = {};
+    const query = { userId: { $ne: mongoose.Types.ObjectId.createFromHexString(userId) } };
 
     if (category) {
       const industryIds = await getIndustryIdsFromCategory(category);
@@ -779,7 +775,7 @@ exports.getRecents = async (req, res, next) => {
     const recentViews = await ClickTracking.aggregate([
       {
         $match: {
-          userId: new mongoose.Types.ObjectId(userId),
+          userId: mongoose.Types.ObjectId.createFromHexString(userId),
           targetType: 'view'
         }
       },
@@ -990,8 +986,9 @@ exports.exploreBusinesses = async (req, res, next) => {
       completeProfile = false
     } = value;
 
+    const userId = req.user.id;
     const hasGeo = Boolean(longitude && latitude);
-    const query = {};
+    const query = { userId: { $ne: mongoose.Types.ObjectId.createFromHexString(userId) } };
 
     // Geo filter — exclude [0,0] placeholder coords (break geo distance calculations)
     if (hasGeo) {
