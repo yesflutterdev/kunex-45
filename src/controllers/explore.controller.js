@@ -1038,20 +1038,18 @@ exports.exploreBusinesses = async (req, res, next) => {
       }
     }
 
-    // toprated: min 4.0 stars AND min 10 ratings
+    // toprated: industry standard — min 10 favorites; fallback to 3 if not enough businesses qualify
     if (toprated) {
-      query['metrics.ratingAverage'] = { $gte: 4.0 };
-      query['metrics.ratingCount'] = { $gte: 10 };
+      const topRatedCount = await BusinessProfile.countDocuments({
+        ...query,
+        'metrics.favoriteCount': { $gte: 10 }
+      });
+      const minFavorites = topRatedCount >= 5 ? 10 : 3;
+      query['metrics.favoriteCount'] = { $gte: minFavorites };
     }
 
     if (mostliked) {
       query['metrics.favoriteCount'] = { $gte: 1 };
-    }
-
-    // rating filter — merges with toprated to use the higher threshold
-    if (rating) {
-      const minRating = toprated ? Math.max(4.0, rating) : rating;
-      query['metrics.ratingAverage'] = { $gte: minRating };
     }
 
     if (priceRange) {
@@ -1080,8 +1078,8 @@ exports.exploreBusinesses = async (req, res, next) => {
     const sort = {};
     switch (sortBy) {
       case 'rating':
-        sort['metrics.ratingAverage'] = -1;
-        sort['metrics.ratingCount'] = -1;
+        sort['metrics.favoriteCount'] = -1;
+        sort['metrics.viewCount'] = -1;
         break;
       case 'popularity':
         sort['metrics.viewCount'] = -1;
@@ -1097,8 +1095,7 @@ exports.exploreBusinesses = async (req, res, next) => {
         // $near already sorts by distance from nearest to farthest
         break;
       default: // relevance
-        if (mostliked) sort['metrics.favoriteCount'] = -1;
-        sort['metrics.ratingAverage'] = -1;
+        sort['metrics.favoriteCount'] = -1;
         sort['metrics.viewCount'] = -1;
         break;
     }
