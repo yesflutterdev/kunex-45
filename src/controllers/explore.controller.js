@@ -1038,13 +1038,13 @@ exports.exploreBusinesses = async (req, res, next) => {
       }
     }
 
-    // toprated: industry standard — min 10 favorites; fallback to 3 if not enough businesses qualify
+    // toprated: min 10 favorites; fallback to 5 if not enough businesses qualify — 0-favorite businesses never shown
     if (toprated) {
       const topRatedCount = await BusinessProfile.countDocuments({
         ...query,
         'metrics.favoriteCount': { $gte: 10 }
       });
-      const minFavorites = topRatedCount >= 5 ? 10 : 3;
+      const minFavorites = topRatedCount >= 5 ? 10 : 5;
       query['metrics.favoriteCount'] = { $gte: minFavorites };
     }
 
@@ -1105,7 +1105,7 @@ exports.exploreBusinesses = async (req, res, next) => {
     let businesses = await BusinessProfile.find(query)
       .populate('userId', 'firstName lastName')
       .populate('builderPageId', 'serviceHours')
-      .select('-__v')
+      .select('-__v -metrics.ratingAverage -metrics.ratingCount')
       .sort(sort)
       .limit(limit * 3)
       .lean();
