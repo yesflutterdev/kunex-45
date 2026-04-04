@@ -1055,4 +1055,66 @@ exports.insertProduct = async (req, res, next) => {
   } catch (error) {
     next(error);
   }
-}; 
+};
+
+const RESERVATION_PLATFORMS = ['opentable', 'resy', 'sevenrooms'];
+
+exports.createReservationWidget = async (req, res, next) => {
+  try {
+    const userId = req.user.id;
+    const { type, title, description, image, url, pageId } = req.body;
+
+    if (!type || !RESERVATION_PLATFORMS.includes(type)) {
+      return res.status(400).json({
+        success: false,
+        message: `type is required and must be one of: ${RESERVATION_PLATFORMS.join(', ')}`
+      });
+    }
+
+    if (!url) {
+      return res.status(400).json({
+        success: false,
+        message: 'url is required'
+      });
+    }
+
+    if (pageId) {
+      const page = await BuilderPage.findOne({ _id: pageId, userId });
+      if (!page) {
+        return res.status(403).json({
+          success: false,
+          message: 'Page not found or access denied'
+        });
+      }
+    }
+
+    const widgetData = {
+      userId,
+      pageId: pageId || undefined,
+      name: title || type,
+      type,
+      category: 'utility',
+      settings: {
+        specific: {
+          [type]: {
+            title: title || '',
+            description: description || '',
+            image: image || '',
+            url
+          }
+        }
+      }
+    };
+
+    const widget = new Widget(widgetData);
+    await widget.save();
+
+    res.status(201).json({
+      success: true,
+      message: 'Reservation widget created successfully',
+      data: { widget }
+    });
+  } catch (error) {
+    next(error);
+  }
+};

@@ -32,7 +32,8 @@ const widgetSchema = new mongoose.Schema(
         'custom_html', 'api_data', 'weather', 'clock', 'calculator',
         'custom_link', 'media', 'promotions', 'products', 'event', 'dropdown',
         'app_integration', 'google_reviews', 'google_maps', 'reservations',
-        'music_podcast', 'social_media_widgets', 'pdf', 'spotify', 'apple_music', 'apple_podcast', 'soundcloud'
+        'music_podcast', 'social_media_widgets', 'pdf', 'spotify', 'apple_music', 'apple_podcast', 'soundcloud',
+        'opentable', 'resy', 'sevenrooms'
       ],
       required: true
     },
@@ -383,6 +384,30 @@ const widgetSchema = new mongoose.Schema(
         reservations: {
           reservationImage: { type: String, default: '' },
           reservationUrl: { type: String, default: '' }
+        },
+
+        // OpenTable fields
+        opentable: {
+          title: { type: String, default: '' },
+          description: { type: String, default: '' },
+          image: { type: String, default: '' },
+          url: { type: String, default: '' }
+        },
+
+        // Resy fields
+        resy: {
+          title: { type: String, default: '' },
+          description: { type: String, default: '' },
+          image: { type: String, default: '' },
+          url: { type: String, default: '' }
+        },
+
+        // SevenRooms fields
+        sevenrooms: {
+          title: { type: String, default: '' },
+          description: { type: String, default: '' },
+          image: { type: String, default: '' },
+          url: { type: String, default: '' }
         },
 
         // Music Podcast fields
@@ -786,6 +811,21 @@ widgetSchema.methods.validateTypeSpecificSettings = function () {
       }
       if (widgetType === 'facebook_profile' && !settings.specific.socialMedia?.facebook?.handle) {
         throw new Error('Facebook Profile requires a handle');
+      }
+      break;
+    case 'opentable':
+      if (!settings.specific.opentable?.url) {
+        throw new Error('OpenTable widget requires a URL');
+      }
+      break;
+    case 'resy':
+      if (!settings.specific.resy?.url) {
+        throw new Error('Resy widget requires a URL');
+      }
+      break;
+    case 'sevenrooms':
+      if (!settings.specific.sevenrooms?.url) {
+        throw new Error('SevenRooms widget requires a URL');
       }
       break;
   }

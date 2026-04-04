@@ -22,7 +22,8 @@ const {
   reorderProducts,
   deleteProduct,
   updateProduct,
-  insertProduct
+  insertProduct,
+  createReservationWidget
 } = require('../controllers/widget.controller');
 
 /**
@@ -1374,4 +1375,7 @@ router.post('/:id/products', auth, insertProduct);
 // Update specific product in products widget
 router.put('/:id/products/:productId', auth, updateProduct);
 
-module.exports = router; 
+// Create reservation widget (OpenTable, Resy, SevenRooms)
+router.post('/reservation', auth, createReservationWidget);
+
+module.exports = router;
