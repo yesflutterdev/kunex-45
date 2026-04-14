@@ -1,5 +1,6 @@
 const PersonalProfile = require('../models/personalProfile.model');
 const User = require('../models/user.model');
+const Widget = require('../models/widget.model');
 const { uploadToCloudinary, deleteImage, extractPublicId } = require('../utils/cloudinary');
 const {
   validateCreatePersonalProfile,
@@ -489,4 +490,121 @@ function calculateDistance(lat1, lon1, lat2, lon2) {
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
   const distance = R * c; // Distance in kilometers
   return Math.round(distance * 100) / 100; // Round to 2 decimal places
-} 
+}
+
+exports.setUsername = async (req, res, next) => {
+  try {
+    const userId = req.user.id;
+    const { username } = req.body;
+
+    if (!username || username.length < 3 || username.length > 30) {
+      return res.status(400).json({
+        success: false,
+        message: 'Username must be between 3 and 30 characters',
+      });
+    }
+
+    if (!/^[a-zA-Z0-9_-]+$/.test(username)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Username can only contain letters, numbers, underscores, and hyphens',
+      });
+    }
+
+    const existing = await PersonalProfile.findOne({ username: username.toLowerCase() });
+    if (existing && existing.userId.toString() !== userId) {
+      return res.status(409).json({
+        success: false,
+        message: 'Username is already taken',
+      });
+    }
+
+    const profile = await PersonalProfile.findOneAndUpdate(
+      { userId },
+      { username: username.toLowerCase() },
+      { new: true }
+    );
+
+    if (!profile) {
+      return res.status(404).json({
+        success: false,
+        message: 'Personal profile not found',
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      message: 'Username set successfully',
+      data: { username: profile.username },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+exports.checkUsername = async (req, res, next) => {
+  try {
+    const { username } = req.params;
+
+    if (!username || username.length < 3) {
+      return res.status(400).json({
+        success: false,
+        message: 'Username must be at least 3 characters',
+      });
+    }
+
+    const existing = await PersonalProfile.findOne({ username: username.toLowerCase() });
+
+    res.status(200).json({
+      success: true,
+      data: { available: !existing },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+exports.getPublicProfile = async (req, res, next) => {
+  try {
+    const { username } = req.params;
+
+    const profile = await PersonalProfile.findOne({ username: username.toLowerCase() })
+      .populate('userId', 'firstName lastName email');
+
+    if (!profile) {
+      return res.status(404).json({
+        success: false,
+        message: 'Profile not found',
+      });
+    }
+
+    const widgets = await Widget.find({
+      userId: profile.userId._id,
+      status: 'active',
+      isVisible: true,
+    }).select('-__v');
+
+    res.status(200).json({
+      success: true,
+      data: {
+        profile: {
+          username: profile.username,
+          firstName: profile.firstName,
+          lastName: profile.lastName,
+          profilePhoto: profile.profilePhoto,
+          bio: profile.bio,
+          interests: profile.interests,
+          location: {
+            city: profile.location?.city,
+            state: profile.location?.state,
+            country: profile.location?.country,
+          },
+          socialMedia: profile.socialMedia,
+        },
+        widgets,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+};

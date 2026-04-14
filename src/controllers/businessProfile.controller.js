@@ -2,6 +2,7 @@ const BusinessProfile = require('../models/businessProfile.model');
 const BuilderPage = require('../models/builderPage.model');
 const Folder = require('../models/folder.model');
 const User = require('../models/user.model');
+const Widget = require('../models/widget.model');
 const { uploadToCloudinary, deleteImage, extractPublicId } = require('../utils/cloudinary');
 const { incrementIndustryViewCount, validateIndustryAndSubcategory } = require('../utils/industryUtils');
 const {
@@ -531,10 +532,17 @@ exports.getPublicProfile = async (req, res, next) => {
       }
     }
 
+    const widgets = await Widget.find({
+      userId: profile.userId._id,
+      status: 'active',
+      isVisible: true,
+    }).select('-__v');
+
     res.status(200).json({
       success: true,
       data: {
         profile,
+        widgets,
         todayHours,
         isCurrentlyOpen
       },

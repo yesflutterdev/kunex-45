@@ -1118,3 +1118,64 @@ exports.createReservationWidget = async (req, res, next) => {
     next(error);
   }
 };
+
+// Sync Google Reviews from Places API into the widget
+exports.syncGoogleReviews = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const userId = req.user.id;
+
+    const widget = await Widget.findOne({ _id: id, userId });
+    if (!widget) return res.status(404).json({ success: false, message: 'Widget not found' });
+    if (widget.type !== 'google_reviews') return res.status(400).json({ success: false, message: 'Widget is not of type google_reviews' });
+
+    const placeId = req.body.place_id || widget.settings?.specific?.googleReviews?.place_id;
+    if (!placeId) return res.status(400).json({ success: false, message: 'place_id is required' });
+
+    const apiKey = process.env.GOOGLE_MAPS_API_KEY;
+    if (!apiKey) return res.status(500).json({ success: false, message: 'Google Maps API key not configured' });
+
+    const url = `https://maps.googleapis.com/maps/api/place/details/json?place_id=${placeId}&fields=name,rating,user_ratings_total,reviews,formatted_address,website,formatted_phone_number,geometry&key=${apiKey}&reviews_sort=newest`;
+
+    const https = require('https');
+    const data = await new Promise((resolve, reject) => {
+      https.get(url, (resp) => {
+        let raw = '';
+        resp.on('data', chunk => raw += chunk);
+        resp.on('end', () => { try { resolve(JSON.parse(raw)); } catch (e) { reject(e); } });
+      }).on('error', reject);
+    });
+
+    if (data.status !== 'OK') {
+      return res.status(400).json({ success: false, message: `Google Places API error: ${data.status}`, error_message: data.error_message });
+    }
+
+    const place = data.result;
+    widget.settings.specific.googleReviews = {
+      place_id: placeId,
+      name: place.name || '',
+      rating: place.rating || 0,
+      user_ratings_total: place.user_ratings_total || 0,
+      formatted_address: place.formatted_address || '',
+      website: place.website || '',
+      formatted_phone_number: place.formatted_phone_number || '',
+      geometry: place.geometry || {},
+      reviews: (place.reviews || []).map(r => ({
+        author_name: r.author_name,
+        profile_photo_url: r.profile_photo_url,
+        rating: r.rating,
+        text: r.text,
+        time: r.time,
+        relative_time_description: r.relative_time_description,
+        language: r.language,
+      })),
+    };
+
+    widget.markModified('settings.specific.googleReviews');
+    await widget.save();
+
+    res.json({ success: true, message: 'Google Reviews synced successfully', data: { widget } });
+  } catch (error) {
+    next(error);
+  }
+};

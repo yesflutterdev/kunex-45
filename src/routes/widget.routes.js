@@ -23,7 +23,8 @@ const {
   deleteProduct,
   updateProduct,
   insertProduct,
-  createReservationWidget
+  createReservationWidget,
+  syncGoogleReviews
 } = require('../controllers/widget.controller');
 
 /**
@@ -1377,5 +1378,8 @@ router.put('/:id/products/:productId', auth, updateProduct);
 
 // Create reservation widget (OpenTable, Resy, SevenRooms)
 router.post('/reservation', auth, createReservationWidget);
+
+// Sync Google Reviews from Places API
+router.put('/:id/google-reviews/sync', auth, syncGoogleReviews);
 
 module.exports = router;

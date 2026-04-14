@@ -666,4 +666,10 @@ router.get('/nearby', personalProfileController.findNearbyProfiles);
  */
 router.delete('/', authenticate, isVerified, personalProfileController.deleteProfile);
 
-module.exports = router; 
+router.patch('/username', authenticate, isVerified, personalProfileController.setUsername);
+
+router.get('/username/check/:username', personalProfileController.checkUsername);
+
+router.get('/public/:username', personalProfileController.getPublicProfile);
+
+module.exports = router;

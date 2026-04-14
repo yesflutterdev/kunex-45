@@ -8,6 +8,16 @@ const personalProfileSchema = new mongoose.Schema(
       required: true,
       unique: true,
     },
+    username: {
+      type: String,
+      unique: true,
+      sparse: true,
+      lowercase: true,
+      trim: true,
+      minlength: 3,
+      maxlength: 30,
+      match: [/^[a-zA-Z0-9_-]+$/, 'Username can only contain letters, numbers, underscores, and hyphens'],
+    },
     firstName: {
       type: String,
       trim: true,
@@ -150,6 +160,7 @@ const personalProfileSchema = new mongoose.Schema(
 );
 
 // Create indexes for better query performance (removed userId as it already has unique index)
+personalProfileSchema.index({ username: 1 });
 personalProfileSchema.index({ 'location.coordinates': '2dsphere' });
 personalProfileSchema.index({ 'socialMedia.platform': 1, 'socialMedia.handle': 1 });
 personalProfileSchema.index({ interests: 1 });
