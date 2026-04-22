@@ -141,6 +141,12 @@ const userSchema = new mongoose.Schema(
     lastLocationUpdate: {
       type: Date,
       default: null
+    },
+
+    // OneSignal push notification token
+    oneSignalToken: {
+      type: String,
+      default: null
     }
 
   },

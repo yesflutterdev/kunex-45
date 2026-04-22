@@ -181,13 +181,14 @@ function checkIfCurrentlyOpenFromServiceHours(serviceHours) {
     if (isNaN(now.getTime())) {
       return false;
     }
-    
-    const currentDayFull = now.toLocaleDateString('en-US', { weekday: 'long' });
+
+    const timezone = serviceHours.timezone || 'UTC';
+    const currentDayFull = now.toLocaleDateString('en-US', { weekday: 'long', timeZone: timezone });
     if (!currentDayFull || typeof currentDayFull !== 'string') {
       return false;
     }
-    
-    const currentTime = now.toTimeString().slice(0, 5);
+
+    const currentTime = now.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', timeZone: timezone });
     if (!currentTime || typeof currentTime !== 'string') {
       return false;
     }
@@ -426,7 +427,8 @@ exports.getProfile = async (req, res, next) => {
       try {
         const now = new Date();
         if (!isNaN(now.getTime())) {
-          const currentDay = now.toLocaleDateString('en-US', { weekday: 'long' });
+          const tz = profile.builderPageId.serviceHours.timezone || 'UTC';
+          const currentDay = now.toLocaleDateString('en-US', { weekday: 'long', timeZone: tz });
           if (currentDay && typeof currentDay === 'string') {
             todayHours = getServiceHoursForDay(profile.builderPageId.serviceHours, currentDay);
             isCurrentlyOpen = checkIfCurrentlyOpenFromServiceHours(profile.builderPageId.serviceHours);
@@ -520,7 +522,8 @@ exports.getPublicProfile = async (req, res, next) => {
       try {
         const now = new Date();
         if (!isNaN(now.getTime())) {
-          const currentDay = now.toLocaleDateString('en-US', { weekday: 'long' });
+          const tz = profile.builderPageId.serviceHours.timezone || 'UTC';
+          const currentDay = now.toLocaleDateString('en-US', { weekday: 'long', timeZone: tz });
           if (currentDay && typeof currentDay === 'string') {
             todayHours = getServiceHoursForDay(profile.builderPageId.serviceHours, currentDay);
             isCurrentlyOpen = checkIfCurrentlyOpenFromServiceHours(profile.builderPageId.serviceHours);
@@ -1675,7 +1678,8 @@ exports.updateBusinessHours = async (req, res, next) => {
     try {
       const now = new Date();
       if (!isNaN(now.getTime()) && builderPage.serviceHours) {
-        const currentDay = now.toLocaleDateString('en-US', { weekday: 'long' });
+        const tz = builderPage.serviceHours.timezone || 'UTC';
+        const currentDay = now.toLocaleDateString('en-US', { weekday: 'long', timeZone: tz });
         if (currentDay && typeof currentDay === 'string') {
           todayHours = getServiceHoursForDay(builderPage.serviceHours, currentDay);
           isCurrentlyOpen = checkIfCurrentlyOpenFromServiceHours(builderPage.serviceHours);

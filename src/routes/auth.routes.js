@@ -407,5 +407,8 @@ router.post('/send-otp-code', authController.sendForgotPasswordCode);
 router.post('/verify-otp-code', authController.verifyForgotPasswordCode);
 router.post('/google-mobile-approach', authController.googleMobileLogin);
 
+// Save OneSignal push token
+router.post('/push-token', authenticate, authController.saveOneSignalToken);
+
 
 module.exports = router;

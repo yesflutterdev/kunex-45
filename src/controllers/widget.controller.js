@@ -2,7 +2,36 @@ const mongoose = require('mongoose');
 const Widget = require('../models/widget.model');
 const BuilderPage = require('../models/builderPage.model');
 const BusinessProfile = require('../models/businessProfile.model');
+const Favorite = require('../models/favorite.model');
+const Update = require('../models/update.model');
+const User = require('../models/user.model');
 const { uploadToCloudinary, deleteImage } = require('../utils/cloudinary');
+const { sendPushNotification } = require('../utils/notification');
+
+async function fanOutUpdate(businessId, widgetId, widgetType, widgetName, action) {
+  try {
+    const favorites = await Favorite.find({
+      widgetId: businessId,
+      type: 'BusinessProfile'
+    }).distinct('userId');
+
+    if (!favorites.length) return;
+
+    const updates = favorites.map(userId => ({
+      userId,
+      businessId,
+      widgetId,
+      action,
+      widgetType,
+      widgetName,
+      isRead: false,
+    }));
+
+    await Update.insertMany(updates);
+  } catch (err) {
+    console.error('[fanOutUpdate]', err.message);
+  }
+}
 
 // Create a new widget
 exports.createWidget = async (req, res, next) => {
@@ -68,6 +97,33 @@ exports.createWidget = async (req, res, next) => {
 
     const widget = new Widget(widgetData);
     await widget.save();
+
+    const businessProfile = await BusinessProfile.findOne({ userId }).lean();
+    if (businessProfile) {
+      fanOutUpdate(businessProfile._id, widget._id, type, name, 'added');
+
+      const widgetCount = await Widget.countDocuments({ userId, status: 'active' });
+      const isLive =
+        businessProfile.coverImage &&
+        businessProfile.logo &&
+        businessProfile.businessName &&
+        (businessProfile.location?.city || businessProfile.location?.address) &&
+        businessProfile.description?.short &&
+        businessProfile.industryId &&
+        widgetCount >= 1;
+
+      if (isLive) {
+        const user = await User.findById(userId).select('oneSignalToken').lean();
+        if (user?.oneSignalToken) {
+          sendPushNotification(
+            [user.oneSignalToken],
+            '🎉 Your page is live!',
+            'Your business profile is now visible on the explore page.',
+            { type: 'page_live' }
+          );
+        }
+      }
+    }
 
     res.status(201).json({
       success: true,
@@ -224,6 +280,11 @@ exports.deleteWidget = async (req, res, next) => {
     }
 
     await Widget.findByIdAndDelete(id);
+
+    const businessProfile = await BusinessProfile.findOne({ userId }).lean();
+    if (businessProfile) {
+      fanOutUpdate(businessProfile._id, widget._id, widget.type, widget.name, 'removed');
+    }
 
     res.status(200).json({
       success: true,

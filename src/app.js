@@ -27,6 +27,7 @@ const formSubmissionRoutes = require('./routes/formSubmission.routes');
 const communityRoutes = require('./routes/community.routes');
 const supportRoutes = require('./routes/support.routes');
 const industryRoutes = require('./routes/industry.routes');
+const updateRoutes = require('./routes/update.routes');
 const swaggerSpec = require('./docs/swagger');
 const errorHandler = require('./middleware/error-handler.mw.js');
 
@@ -96,6 +97,7 @@ app.use('/api/forms', formSubmissionRoutes);
 app.use('/api/community', communityRoutes);
 app.use('/api/support', supportRoutes);
 app.use('/api/industries', industryRoutes);
+app.use('/api/updates', updateRoutes);
 app.use('/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 
 app.get('/', (req, res) => {

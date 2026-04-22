@@ -1029,3 +1029,17 @@ exports.verifyForgotPasswordCode = async (req, res) => {
 
   } catch (e) { console.log(e); }
 }
+
+// Save OneSignal push token for the authenticated user
+exports.saveOneSignalToken = async (req, res) => {
+  try {
+    const { token } = req.body;
+    if (!token) return res.status(400).json({ success: false, message: 'token is required' });
+
+    await req.user.constructor.findByIdAndUpdate(req.user._id, { oneSignalToken: token });
+    return res.status(200).json({ success: true, message: 'Push token saved' });
+  } catch (e) {
+    console.error('[saveOneSignalToken]', e.message);
+    return res.status(500).json({ success: false, message: e.message });
+  }
+};
