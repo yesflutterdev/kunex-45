@@ -58,7 +58,6 @@ const supportCategorySchema = new mongoose.Schema(
 );
 
 // Indexes
-supportCategorySchema.index({ name: 1 });
 supportCategorySchema.index({ isActive: 1, order: 1 });
 supportCategorySchema.index({ usageCount: -1 });
 

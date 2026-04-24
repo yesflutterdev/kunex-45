@@ -160,7 +160,6 @@ const personalProfileSchema = new mongoose.Schema(
 );
 
 // Create indexes for better query performance (removed userId as it already has unique index)
-personalProfileSchema.index({ username: 1 });
 personalProfileSchema.index({ 'location.coordinates': '2dsphere' });
 personalProfileSchema.index({ 'socialMedia.platform': 1, 'socialMedia.handle': 1 });
 personalProfileSchema.index({ interests: 1 });
