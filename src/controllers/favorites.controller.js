@@ -1122,7 +1122,7 @@ exports.getFavoritedBusinessesOverview = async (req, res, next) => {
       type: { $in: ['Page', 'BusinessProfile'] },
       widgetId: { $exists: true, $ne: null }
     })
-      .select('widgetId createdAt')
+      .select('widgetId createdAt lastVisited')
       .lean();
 
     if (!favorites || favorites.length === 0) {
@@ -1141,12 +1141,12 @@ exports.getFavoritedBusinessesOverview = async (req, res, next) => {
       const bid = fav.widgetId.toString();
       if (!mongoose.Types.ObjectId.isValid(bid)) continue;
 
-      const favoritedAt = fav.createdAt ? new Date(fav.createdAt) : null;
-      if (!favoritedAt || isNaN(favoritedAt.getTime())) continue;
+      // Use lastVisited as cutoff if user has viewed the story, otherwise createdAt
+      const cutoff = fav.lastVisited ? new Date(fav.lastVisited) : (fav.createdAt ? new Date(fav.createdAt) : null);
+      if (!cutoff || isNaN(cutoff.getTime())) continue;
 
-      if (!businessFavoriteMap.has(bid) || 
-          businessFavoriteMap.get(bid) < favoritedAt) {
-        businessFavoriteMap.set(bid, favoritedAt);
+      if (!businessFavoriteMap.has(bid) || businessFavoriteMap.get(bid) < cutoff) {
+        businessFavoriteMap.set(bid, cutoff);
         if (!validBusinessIds.includes(bid)) {
           validBusinessIds.push(bid);
         }
@@ -1354,7 +1354,7 @@ exports.getFavoritedBusinessDetails = async (req, res, next) => {
       type: { $in: ['Page', 'BusinessProfile'] },
       widgetId: business._id
     })
-      .select('createdAt')
+      .select('createdAt lastVisited')
       .sort({ createdAt: -1 })
       .lean();
 
@@ -1365,13 +1365,15 @@ exports.getFavoritedBusinessDetails = async (req, res, next) => {
       });
     }
 
-    const favoritedAt = new Date(favorite.createdAt);
-    if (isNaN(favoritedAt.getTime())) {
+    // Use lastVisited as cutoff if story was previously viewed, otherwise createdAt
+    const cutoffDate = favorite.lastVisited ? new Date(favorite.lastVisited) : new Date(favorite.createdAt);
+    if (isNaN(cutoffDate.getTime())) {
       return res.status(500).json({
         success: false,
         message: 'Invalid favorite date'
       });
     }
+    const favoritedAt = cutoffDate;
 
     const newWidgets = await Widget.find({
       pageId: pageIdToUse,
@@ -1382,7 +1384,7 @@ exports.getFavoritedBusinessDetails = async (req, res, next) => {
       .sort({ order: 1, createdAt: 1 })
       .lean();
 
-    let latestWidgetDate = favoritedAt;
+    let latestWidgetDate = null;
     if (newWidgets && newWidgets.length > 0) {
       const validDates = newWidgets
         .map(w => w.createdAt ? new Date(w.createdAt) : null)
@@ -1433,4 +1435,33 @@ exports.getFavoritedBusinessDetails = async (req, res, next) => {
     }
     next(error);
   }
-}; 
+};
+
+exports.markStoryViewed = async (req, res, next) => {
+  try {
+    const userId = req.user?.id;
+    const { businessId } = req.params;
+
+    if (!mongoose.Types.ObjectId.isValid(businessId)) {
+      return res.status(400).json({ success: false, message: 'Invalid businessId format' });
+    }
+
+    const favorite = await Favorite.findOneAndUpdate(
+      {
+        userId: new mongoose.Types.ObjectId(userId),
+        type: { $in: ['Page', 'BusinessProfile'] },
+        widgetId: new mongoose.Types.ObjectId(businessId)
+      },
+      { $set: { lastVisited: new Date() } },
+      { new: true }
+    );
+
+    if (!favorite) {
+      return res.status(404).json({ success: false, message: 'Favorite not found' });
+    }
+
+    return res.status(200).json({ success: true, message: 'Story marked as viewed' });
+  } catch (error) {
+    next(error);
+  }
+};

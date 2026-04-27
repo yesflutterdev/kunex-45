@@ -1444,5 +1444,6 @@ router.get('/businesses/overview', auth.authenticate, favoritesController.getFav
  *         description: Business or page not found
  */
 router.get('/businesses/details', auth.authenticate, favoritesController.getFavoritedBusinessDetails);
+router.put('/businesses/:businessId/viewed', auth.authenticate, favoritesController.markStoryViewed);
 
 module.exports = router; 

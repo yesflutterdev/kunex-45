@@ -990,8 +990,9 @@ exports.exploreBusinesses = async (req, res, next) => {
     const hasGeo = Boolean(longitude && latitude);
     const query = { userId: { $ne: mongoose.Types.ObjectId.createFromHexString(userId) } };
 
-    // Geo filter — exclude [0,0] placeholder coords (break geo distance calculations)
-    if (hasGeo) {
+    // Geo filter — excluded for toprated (global ranking, not proximity-based)
+    // Also exclude [0,0] placeholder coords (break geo distance calculations)
+    if (hasGeo && !toprated) {
       const radius = nearby ? Math.min(maxDistance, 10000) : maxDistance;
       query.$nor = [{ 'location.coordinates.coordinates.0': 0, 'location.coordinates.coordinates.1': 0 }];
       query['location.coordinates'] = {
