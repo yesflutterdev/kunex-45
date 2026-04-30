@@ -1738,15 +1738,6 @@ async function hasCompleteProfileWithDetails(business) {
       return { isComplete: false, reason: 'noIndustry' };
     }
 
-    const hasDescription = business.description && (
-      (business.description.short && typeof business.description.short === 'string' && business.description.short.trim() !== '') ||
-      (business.description.full && typeof business.description.full === 'string' && business.description.full.trim() !== '')
-    );
-
-    if (!hasDescription) {
-      return { isComplete: false, reason: 'noDescription' };
-    }
-
     const hasLocation = business.location && (
       (business.location.address && typeof business.location.address === 'string' && business.location.address.trim() !== '') ||
       (business.location.city && typeof business.location.city === 'string' && business.location.city.trim() !== '') ||
