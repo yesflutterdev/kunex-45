@@ -1171,13 +1171,16 @@ exports.getFavoritedBusinessesOverview = async (req, res, next) => {
       });
     }
 
+    const now = new Date();
+
     const widgets = await Widget.find({
       businessId: { $in: businessObjectIds },
       status: 'active',
       isVisible: true,
-      createdAt: { $exists: true, $ne: null }
+      createdAt: { $exists: true, $ne: null },
+      storyExpiresAt: { $gt: now }
     })
-      .select('businessId createdAt')
+      .select('businessId createdAt storyExpiresAt')
       .lean();
 
     const businessesWithNewWidgets = new Map();
@@ -1188,17 +1191,17 @@ exports.getFavoritedBusinessesOverview = async (req, res, next) => {
       const bid = widget.businessId.toString();
       if (!mongoose.Types.ObjectId.isValid(bid)) continue;
 
-      const favoritedAt = businessFavoriteMap.get(bid);
-      if (!favoritedAt) continue;
+      const cutoff = businessFavoriteMap.get(bid);
+      if (!cutoff) continue;
 
       const widgetCreatedAt = new Date(widget.createdAt);
       if (isNaN(widgetCreatedAt.getTime())) continue;
 
-      if (widgetCreatedAt > favoritedAt) {
+      if (widgetCreatedAt > cutoff) {
         if (!businessesWithNewWidgets.has(bid)) {
           businessesWithNewWidgets.set(bid, {
             businessId: bid,
-            favoritedAt
+            cutoff
           });
         }
       }
@@ -1375,14 +1378,23 @@ exports.getFavoritedBusinessDetails = async (req, res, next) => {
     }
     const favoritedAt = cutoffDate;
 
+    const detailNow = new Date();
+
     const newWidgets = await Widget.find({
       pageId: pageIdToUse,
       status: 'active',
       isVisible: true,
-      createdAt: { $gt: favoritedAt, $exists: true, $ne: null }
+      createdAt: { $gt: favoritedAt, $exists: true, $ne: null },
+      storyExpiresAt: { $gt: detailNow }
     })
       .sort({ order: 1, createdAt: 1 })
       .lean();
+
+    // Mark each widget as viewed (createdAt <= lastVisited) or unviewed
+    const lastVisitedTime = favorite.lastVisited ? new Date(favorite.lastVisited).getTime() : 0;
+    newWidgets.forEach(widget => {
+      widget.isViewed = lastVisitedTime > 0 && new Date(widget.createdAt).getTime() <= lastVisitedTime;
+    });
 
     let latestWidgetDate = null;
     if (newWidgets && newWidgets.length > 0) {

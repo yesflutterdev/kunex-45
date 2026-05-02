@@ -67,6 +67,7 @@ exports.createWidget = async (req, res, next) => {
     }
 
     // Create widget data
+    const now = new Date();
     const widgetData = {
       userId,
       pageId,
@@ -75,7 +76,8 @@ exports.createWidget = async (req, res, next) => {
       category,
       settings: settings || {},
       layout: layout || {},
-      order: order || 0
+      order: order || 0,
+      storyExpiresAt: new Date(now.getTime() + 24 * 60 * 60 * 1000)
     };
 
     // Special handling for products widget type - ensure products have MongoDB ObjectIds
@@ -1149,6 +1151,7 @@ exports.createReservationWidget = async (req, res, next) => {
       }
     }
 
+    const reservationNow = new Date();
     const widgetData = {
       userId,
       pageId: pageId || undefined,
@@ -1164,7 +1167,8 @@ exports.createReservationWidget = async (req, res, next) => {
             url
           }
         }
-      }
+      },
+      storyExpiresAt: new Date(reservationNow.getTime() + 24 * 60 * 60 * 1000)
     };
 
     const widget = new Widget(widgetData);

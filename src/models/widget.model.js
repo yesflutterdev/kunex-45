@@ -610,6 +610,10 @@ const widgetSchema = new mongoose.Schema(
         maxlength: 2000
       }
     },
+    storyExpiresAt: {
+      type: Date,
+      default: null,
+    },
     status: {
       type: String,
       enum: ['active', 'inactive', 'draft', 'archived'],
@@ -696,6 +700,10 @@ widgetSchema.index({ type: 1, category: 1 });
 widgetSchema.index({ status: 1, isVisible: 1 });
 widgetSchema.index({ 'metadata.tags': 1 });
 widgetSchema.index({ order: 1 });
+
+// Story TTL: MongoDB auto-deletes widgets 24 hours after creation
+// expireAfterSeconds: 0 means expire exactly at the storyExpiresAt timestamp
+widgetSchema.index({ storyExpiresAt: 1 }, { expireAfterSeconds: 0, sparse: true });
 
 // Text search index
 widgetSchema.index({
